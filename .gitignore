@@ -1,0 +1,11 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+*.log
+lastfm-key.json
+
+# Android signing key (keep a backup, never share)
+src-tauri/aurora-release.jks
+*.jks
+keystore.properties

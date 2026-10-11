@@ -1,0 +1,48 @@
+[package]
+name = "aurora"
+version = "0.2.0"
+description = "Aurora music player"
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "aurora_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+# Type-check the Android code paths on a PC (`cargo check --features simulate-android`). Never ship with it.
+simulate-android = []
+
+[dependencies]
+tauri-plugin-aurora-mobile = { path = "aurora-mobile" }
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["process", "io-util", "macros", "rt-multi-thread", "time"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+lofty = "0.22"
+walkdir = "2"
+rayon = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp"] }
+sha2 = "0.10"
+rand = "0.8"
+url = "2"
+md5 = "0.7"
+fs2 = "0.4"
+
+[profile.dev]
+incremental = true
+
+# Small, fast release binary.
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

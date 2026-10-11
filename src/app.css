@@ -1,0 +1,282 @@
+/* Aurora — design tokens.
+   Two hand-tuned modes (not an automatic inversion). Colour channels are
+   exposed as "R G B" so components can mix their own alpha:
+   rgb(var(--ink-rgb) / 0.08). The accent is re-tinted live from the
+   current cover art or your theme image (see theme.svelte.ts). */
+:root,
+:root[data-theme="dark"] {
+  --base-rgb: 21 18 28;
+  --ink-rgb: 241 237 247;
+  --well-rgb: 0 0 0;
+  --night: #15121c;
+  --night-2: #1f1a29;
+  --night-3: #2a2436;
+  --ink: rgb(var(--ink-rgb));
+  --ink-2: #b3aac2;
+  --ink-3: #7f7692;
+  --line: rgb(var(--ink-rgb) / 0.08);
+  --glass: rgb(var(--base-rgb) / 0.58);
+  --glass-strong: rgb(var(--base-rgb) / 0.84);
+  --panel: rgb(var(--base-rgb) / 0.52);
+  --panel-solid: #1b1724;
+  --on-accent: #120f18;
+  --danger: #ff8f8f;
+  --warn: #ffb27a;
+  --vinyl: #0d0b11;
+  --well: rgb(0 0 0 / 0.24);
+  --shadow: 0 18px 50px rgb(0 0 0 / 0.45);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --base-rgb: 243 241 247;
+  --ink-rgb: 29 23 38;
+  --well-rgb: 72 56 104;
+  --night: #f3f1f7;
+  --night-2: #ffffff;
+  --night-3: #e6e1ee;
+  --ink-2: #554d63;
+  --ink-3: #8a8299;
+  --line: rgb(var(--ink-rgb) / 0.1);
+  --glass: rgb(255 255 255 / 0.62);
+  --glass-strong: rgb(255 255 255 / 0.9);
+  --panel: rgb(255 255 255 / 0.6);
+  --panel-solid: #fbfaFd;
+  --on-accent: #ffffff;
+  --danger: #c4333a;
+  --warn: #b3561b;
+  --vinyl: #18151d;
+  --well: rgb(72 56 104 / 0.07);
+  --shadow: 0 18px 44px rgb(60 40 90 / 0.16);
+  color-scheme: light;
+}
+
+:root {
+  /* Room for the phone's status bar and gesture bar (0 on Windows). */
+  --safe-top: max(env(safe-area-inset-top, 0px), var(--fallback-top, 0px));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--fallback-bottom, 0px));
+  /* Default accent, replaced by the cover colour while playing. */
+  --accent-rgb: 94 224 196;
+  --accent: rgb(var(--accent-rgb));
+  --accent-soft: rgb(var(--accent-rgb) / 0.16);
+  --violet: #9d7bff;
+
+  --youtube: #ff4e45;
+  --local: #f5b85c;
+
+  --r-art: 8px;
+  --r-panel: 20px;
+  --r-pill: 999px;
+  --gutter: 10px;
+
+  --font-display: "Bricolage Grotesque Variable", "Segoe UI Variable Display", system-ui, sans-serif;
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --t-fast: 140ms;
+  --t-med: 320ms;
+  --t-slow: 900ms;
+}
+
+:root[data-reduce-motion="true"] {
+  --t-fast: 0ms;
+  --t-med: 0ms;
+  --t-slow: 0ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-med: 0ms;
+    --t-slow: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--night);
+  color: var(--ink);
+  font: 14px/1.45 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+#app {
+  height: 100%;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  user-select: text;
+}
+
+img {
+  display: block;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Thin, unobtrusive scrollbars. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--ink-rgb) / 0.12);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--ink-rgb) / 0.22);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Shared bits */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: var(--r-pill);
+  background: rgb(var(--ink-rgb) / 0.08);
+  font-weight: 600;
+  transition:
+    background var(--t-fast),
+    transform var(--t-fast) var(--ease-out);
+}
+.btn:hover {
+  background: rgb(var(--ink-rgb) / 0.14);
+}
+.btn:active {
+  transform: scale(0.97);
+}
+.btn.primary {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+.btn.primary:hover {
+  filter: brightness(1.08);
+}
+.btn:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.field {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--well);
+  outline: none;
+  transition: border-color var(--t-fast);
+}
+.field:focus {
+  border-color: var(--accent);
+}
+
+.muted {
+  color: var(--ink-2);
+}
+
+.page {
+  padding: 28px 36px 40px;
+}
+
+.page-title {
+  font-size: 44px;
+  font-variation-settings: "wdth" 85;
+  margin-bottom: 24px;
+}
+
+.section-title {
+  font-size: 20px;
+  margin: 32px 0 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 22px 18px;
+}
+
+.empty {
+  max-width: 460px;
+  padding: 28px 0;
+}
+.empty h2 {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+.empty p {
+  color: var(--ink-2);
+  margin: 0 0 18px;
+}
+
+/* Phone layout (Android app or a very narrow window). */
+html[data-phone] .grid {
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 18px 12px;
+}
+html[data-phone] button,
+html[data-phone] a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Phone: a button whose text needs two lines (big system font) grows instead of spilling out. */
+html[data-phone] .btn {
+  height: auto;
+  min-height: 36px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  line-height: 1.25;
+}
+html[data-phone] .btn > svg {
+  flex: none;
+}

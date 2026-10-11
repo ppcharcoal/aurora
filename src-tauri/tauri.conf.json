@@ -1,0 +1,73 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aurora",
+  "version": "0.2.0",
+  "identifier": "app.aurora.player",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Aurora",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 940,
+        "minHeight": 600,
+        "center": true,
+        "decorations": false,
+        "transparent": false,
+        "visible": false,
+        "backgroundColor": "#1a1622",
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "img-src": "'self' asset: http://asset.localhost https://*.ytimg.com https://*.googleusercontent.com https://*.ggpht.com https://*.dzcdn.net https://*.mzstatic.com data: blob: https://*.fastly.net https://*.sndcdn.com",
+        "media-src": "'self' asset: http://asset.localhost blob: https://*.dzcdn.net https://*.mzstatic.com https://*.googlevideo.com https://*.sndcdn.com https://*.soundcloud.cloud",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "style-src": "'self' 'unsafe-inline'",
+        "font-src": "'self' data:"
+      },
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": false
+      }
+    },
+    "shortDescription": "Aurora music player",
+    "android": {
+      "minSdkVersion": 24
+    }
+  }
+}

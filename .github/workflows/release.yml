@@ -1,0 +1,125 @@
+# Builds the Windows installer and the Android app and attaches both to a
+# GitHub Release. Start it by pushing a version tag:
+#
+#   git tag v0.2.0
+#   git push origin v0.2.0
+#
+# or from the repository's Actions tab → "Release" → "Run workflow".
+# See README → "Publish on GitHub" for the secrets it needs.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update, e.g. v0.2.0"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Last.fm key (optional)
+        shell: bash
+        env:
+          LASTFM_KEY_JSON: ${{ secrets.LASTFM_KEY_JSON }}
+        run: |
+          if [ -n "$LASTFM_KEY_JSON" ]; then printf '%s' "$LASTFM_KEY_JSON" > src-tauri/lastfm-key.json; fi
+
+      - run: npm ci
+      - run: npm run app:build
+
+      - name: Rename installer
+        shell: bash
+        run: |
+          mkdir -p out
+          cp src-tauri/target/release/bundle/nsis/*-setup.exe "out/Aurora-${TAG}-windows-setup.exe"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Aurora ${{ env.TAG }}
+          draft: false
+          prerelease: true
+          files: out/*
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Android NDK
+        run: |
+          sdkmanager --install "ndk;27.2.12479018" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Last.fm key (optional)
+        env:
+          LASTFM_KEY_JSON: ${{ secrets.LASTFM_KEY_JSON }}
+        run: |
+          if [ -n "$LASTFM_KEY_JSON" ]; then printf '%s' "$LASTFM_KEY_JSON" > src-tauri/lastfm-key.json; fi
+
+      - run: npm ci
+      - name: Create the Android project
+        run: npx tauri android init --ci && node scripts/android-setup.mjs
+
+      - name: Signing key
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
+            echo "::error::Add the ANDROID_KEYSTORE and ANDROID_KEY_PASSWORD secrets (README → Publish on GitHub)."
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE" | base64 -d > src-tauri/aurora-release.jks
+          printf 'password=%s\n' "$ANDROID_KEY_PASSWORD" > src-tauri/gen/android/keystore.properties
+          node scripts/android-signing.mjs
+
+      - run: npm run android:build
+
+      - name: Rename app
+        run: |
+          mkdir -p out
+          cp src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk "out/Aurora-${TAG}-android.apk"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Aurora ${{ env.TAG }}
+          draft: false
+          prerelease: true
+          files: out/*
