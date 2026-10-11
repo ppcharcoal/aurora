@@ -2,7 +2,7 @@
 
 **A music player for your own library, on Windows and Android.** Find any song or album, download it with proper tags and cover art, and play it in a clean, modern player with playlists, listening stats and Last.fm scrobbling. On your phone it plays in the background, from the lock screen and in the car with Android Auto.
 
-**[⬇ Download the latest version](https://github.com/ppcharcoal/aurora/releases/latest)**
+**[⬇ Download Aurora 0.2.1](https://github.com/ppcharcoal/aurora/releases/tag/v0.2.1)**
 
 > Aurora is in early testing. Expect rough edges, and please [report anything that breaks](https://github.com/ppcharcoal/aurora/issues).
 
@@ -35,13 +35,13 @@
 
 ### Windows 10 / 11
 
-1. Download `Aurora-…-windows-setup.exe` from the [latest release](https://github.com/ppcharcoal/aurora/releases/latest) and run it.
+1. Download `Aurora-…-windows-setup.exe` from the [latest release](https://github.com/ppcharcoal/aurora/releases/tag/v0.2.1) and run it.
 2. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. The installer isn't signed with a paid certificate, so Windows doesn't recognise it yet.
 3. Aurora installs for your user only (no admin rights needed) and appears in the Start menu. The first time you search, it offers to download the tools it needs (yt-dlp and FFmpeg, about 150 MB).
 
 ### Android 7 or newer
 
-1. On your phone, download `Aurora-…-android.apk` from the [latest release](https://github.com/ppcharcoal/aurora/releases/latest) and open it.
+1. On your phone, download `Aurora-…-android.apk` from the [latest release](https://github.com/ppcharcoal/aurora/releases/tag/v0.2.1) and open it.
 2. Allow **"Install unknown apps"** for your browser or Files app when asked. If Play Protect warns about an unknown app, choose **More details → Install anyway**.
 3. Updates install over the old version and keep your music and settings.
 
