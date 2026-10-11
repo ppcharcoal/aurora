@@ -20,7 +20,7 @@ function patch(file, edits) {
   for (const [marker, find, replace] of edits) {
     if (text.includes(marker)) continue;
     if (!find.test(text)) {
-      console.error(`Couldn't find where to add "${marker}" in ${file}. Please add it by hand (see README → Android).`);
+      console.error(`Couldn't find where to add "${marker}" in ${file}. Please add it by hand (see docs/BUILDING.md → Build the Android app).`);
       process.exitCode = 1;
       continue;
     }

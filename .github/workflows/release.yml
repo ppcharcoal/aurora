@@ -5,7 +5,7 @@
 #   git push origin v0.2.0
 #
 # or from the repository's Actions tab → "Release" → "Run workflow".
-# See README → "Publish on GitHub" for the secrets it needs.
+# See docs/BUILDING.md → "Publish on GitHub" for the secrets it needs.
 name: Release
 
 on:
@@ -105,7 +105,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           if [ -z "$ANDROID_KEYSTORE" ] || [ -z "$ANDROID_KEY_PASSWORD" ]; then
-            echo "::error::Add the ANDROID_KEYSTORE and ANDROID_KEY_PASSWORD secrets (README → Publish on GitHub)."
+            echo "::error::Add the ANDROID_KEYSTORE and ANDROID_KEY_PASSWORD secrets (docs/BUILDING.md → Publish on GitHub)."
             exit 1
           fi
           echo "$ANDROID_KEYSTORE" | base64 -d > src-tauri/aurora-release.jks

@@ -84,7 +84,7 @@ if (!gradle.includes("signingConfigs.getByName(\"release\")")) {
         }
     }`;
   if (!/^android\s*\{/m.test(gradle) || !/getByName\("release"\)\s*\{/.test(gradle)) {
-    console.error("Couldn't find where to add signing in app/build.gradle.kts (see README → Android).");
+    console.error("Couldn't find where to add signing in app/build.gradle.kts (see docs/BUILDING.md → Build the Android app).");
     process.exit(1);
   }
   gradle = gradle.replace(/^android\s*\{/m, config);
