@@ -127,9 +127,9 @@ const stripHtml = (s: string) =>
 /* ------------------------------- store ------------------------------- */
 
 class LastFm {
-  /** API key + secret: app-wide (one Last.fm API account serves every profile). */
-  apiKey = $state("");
-  secret = $state("");
+  /** A key the user pasted in (only used when this build has none built in).
+   *  The key itself never comes back to the screen; only whether one is saved. */
+  customKey = $state(false);
   cfg = $state<LfmProfile>({ ...defaults });
   loved = $state<Record<string, LovedSong>>({});
   history = $state.raw<History | null>(null);
@@ -138,7 +138,7 @@ class LastFm {
 
   /** This copy of Aurora has a Last.fm key built in: users only sign in. */
   builtin = $state(false);
-  hasKey = $derived(this.builtin || (!!this.apiKey && !!this.secret));
+  hasKey = $derived(this.builtin || this.customKey);
   connected = $derived(!!this.cfg.sk);
 
   private queue: Scrobble[] = [];
@@ -170,8 +170,7 @@ class LastFm {
   async load() {
     this.builtin = await invoke<boolean>("lastfm_builtin").catch(() => false);
     const app = await storeGet<{ apiKey: string; secret: string }>("lastfm-app");
-    this.apiKey = app?.apiKey ?? "";
-    this.secret = app?.secret ?? "";
+    this.customKey = !!(app?.apiKey && app?.secret);
     this.saveCfg = debouncedSaver(profiles.key("lastfm"), 200);
     this.saveLoved = debouncedSaver(profiles.key("loved"), 500);
     this.cfg = { ...defaults, ...((await storeGet<LfmProfile>(profiles.key("lastfm"))) ?? {}) };
@@ -190,9 +189,8 @@ class LastFm {
   }
 
   async saveKeys(apiKey: string, secret: string) {
-    this.apiKey = apiKey.trim();
-    this.secret = secret.trim();
-    await storeSet("lastfm-app", { apiKey: this.apiKey, secret: this.secret });
+    await storeSet("lastfm-app", { apiKey: apiKey.trim(), secret: secret.trim() });
+    this.customKey = true;
   }
 
   setOption<K extends keyof LfmOptions>(k: K, v: LfmOptions[K]) {

@@ -33,6 +33,12 @@ pub struct Session {
 }
 
 fn keys(app: &AppHandle) -> Result<AppKeys, String> {
+    // A key built into this copy of Aurora (see build.rs) always wins, so
+    // users never have to deal with keys.
+    if let (Some(k), Some(s)) = (option_env!("AURORA_LASTFM_KEY"), option_env!("AURORA_LASTFM_SECRET")) {
+        return Ok(AppKeys { api_key: k.into(), secret: s.into() });
+    }
+    // Otherwise the key the user pasted in (Profile → Last.fm).
     let path = data_dir(app)?.join("lastfm-app.json");
     let k: AppKeys = std::fs::read(&path)
         .ok()
@@ -41,11 +47,7 @@ fn keys(app: &AppHandle) -> Result<AppKeys, String> {
     if !k.api_key.trim().is_empty() && !k.secret.trim().is_empty() {
         return Ok(AppKeys { api_key: k.api_key.trim().into(), secret: k.secret.trim().into() });
     }
-    // Key built into this copy of Aurora (see build.rs).
-    match (option_env!("AURORA_LASTFM_KEY"), option_env!("AURORA_LASTFM_SECRET")) {
-        (Some(k), Some(s)) => Ok(AppKeys { api_key: k.into(), secret: s.into() }),
-        _ => Err("Add your Last.fm API key and secret first (Profile → Last.fm).".into()),
-    }
+    Err("Add your Last.fm API key and secret first (Profile → Last.fm).".into())
 }
 
 /// True when this build has a Last.fm key built in (users just sign in).

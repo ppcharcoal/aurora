@@ -311,7 +311,7 @@
               {:else}
                 <button class="btn small primary" onclick={() => downloads.enqueueCatalog(t)}><Icon name="download" size={14} /> Download</button>
               {/if}
-              <button class="btn small icon-only" onclick={(e) => catalogMenu(e, t)} aria-label="Download to a playlist" title="Download to a playlist">
+              <button class="btn small icon-only pl" onclick={(e) => catalogMenu(e, t)} aria-label="Download to a playlist" title="Download to a playlist">
                 <Icon name="playlistAdd" size={16} />
               </button>
             </div>
@@ -362,7 +362,7 @@
             {:else}
               <button class="btn small primary" onclick={() => download(r)}><Icon name="download" size={14} /> Download</button>
             {/if}
-            <button class="btn small icon-only" onclick={(e) => playlistMenu(e, r)} aria-label="Download to a playlist" title="Download to a playlist">
+            <button class="btn small icon-only pl" onclick={(e) => playlistMenu(e, r)} aria-label="Download to a playlist" title="Download to a playlist">
               <Icon name="playlistAdd" size={16} />
             </button>
           </div>
@@ -701,7 +701,32 @@
   :global(html[data-phone]) .seg button {
     padding: 0 12px;
   }
-  :global(html[data-phone]) .al .acts :global(.btn) {
+
+  /* Phone: preview + one wide main button per card. "Download to a playlist"
+     is left out here (playlists still work from a song's menu once it's downloaded). */
+  :global(html[data-phone]) .acts {
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+  :global(html[data-phone]) .acts .pl {
+    display: none;
+  }
+  :global(html[data-phone]) .acts > .btn:not(.icon-only) {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 36px;
+    min-height: 36px;
+    padding: 0 10px;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  :global(html[data-phone]) .btn.icon-only {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    border-radius: 50%;
   }
 </style>

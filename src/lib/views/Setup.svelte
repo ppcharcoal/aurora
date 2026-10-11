@@ -40,8 +40,8 @@
   }
 
   // Last.fm without a built-in key: paste your own (same as Profile → Connections).
-  let key = $state(lastfm.apiKey);
-  let secret = $state(lastfm.secret);
+  let key = $state("");
+  let secret = $state("");
   async function saveKeys() {
     await lastfm.saveKeys(key, secret);
     ui.toast("Last.fm key saved", "success", 2000);
@@ -164,7 +164,7 @@
                 (callback URL <code>http://127.0.0.1:43822/lastfm</code>) and paste it here:
               </p>
               <div class="keys">
-                <input class="field" bind:value={key} placeholder="API key" spellcheck="false" />
+                <input class="field" type="password" bind:value={key} placeholder="API key" spellcheck="false" autocomplete="off" />
                 <input class="field" type="password" bind:value={secret} placeholder="Shared secret" spellcheck="false" />
                 <button class="btn" onclick={saveKeys} disabled={key.trim().length < 20 || secret.trim().length < 20}>Save</button>
               </div>

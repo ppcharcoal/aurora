@@ -4,9 +4,13 @@
   import { ui } from "../ui.svelte";
   import Icon from "./Icon.svelte";
 
-  let key = $state(lastfm.apiKey);
-  let secret = $state(lastfm.secret);
+  // Never pre-filled: a saved key stays out of sight.
+  let key = $state("");
+  let secret = $state("");
   let editing = $state(!lastfm.hasKey);
+  $effect(() => {
+    if (lastfm.builtin) editing = false;
+  });
   let applying = $state(false);
   async function useProfile() {
     applying = true;
@@ -22,6 +26,7 @@
 
   async function saveKeys() {
     await lastfm.saveKeys(key, secret);
+    key = secret = "";
     editing = false;
     ui.toast("Last.fm key saved", "success", 2000);
   }
@@ -61,8 +66,8 @@
       <li>Copy the <b>API key</b> and <b>Shared secret</b> here.</li>
     </ol>
     <div class="keys">
-      <label><span>API key</span><input class="field" bind:value={key} spellcheck="false" /></label>
-      <label><span>Shared secret</span><input class="field" type="password" bind:value={secret} spellcheck="false" /></label>
+      <label><span>API key</span><input class="field" type="password" bind:value={key} spellcheck="false" autocomplete="off" placeholder={lastfm.customKey ? "Saved; paste a new one to replace it" : ""} /></label>
+      <label><span>Shared secret</span><input class="field" type="password" bind:value={secret} spellcheck="false" autocomplete="off" /></label>
     </div>
     <div class="row">
       <button class="btn primary" onclick={saveKeys} disabled={key.trim().length < 20 || secret.trim().length < 20}>Save key</button>
@@ -79,7 +84,8 @@
           <Icon name="link" size={15} /> {lastfm.busy === "connect" ? "Waiting for the browser…" : "Connect Last.fm"}
         </button>
       {/if}
-      {#if !lastfm.builtin || lastfm.apiKey}<button class="btn ghost" onclick={() => (editing = true)}>Change key</button>{/if}
+      <!-- Builds with a key built in always use it: nothing to change. -->
+      {#if !lastfm.builtin}<button class="btn ghost" onclick={() => (editing = true)}>Change key</button>{/if}
     </div>
 
     <ul class="opts">
