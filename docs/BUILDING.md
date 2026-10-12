@@ -100,7 +100,7 @@ git tag v0.2.1
 git push origin main v0.2.1
 ```
 
-3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe` and `Aurora-v0.2.1-android.apk`. Releases are marked *pre-release* (testing); untick that on the release page when you're happy.
+3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe` and `Aurora-v0.2.1-android.apk`. Each release becomes the "latest" one, which the download links in the README always point to.
 
 You can also start a build without a tag: **Actions → Release → Run workflow**, and type a tag name.
 

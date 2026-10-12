@@ -58,7 +58,8 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: Aurora ${{ env.TAG }}
           draft: false
-          prerelease: true
+          prerelease: false
+          make_latest: true
           files: out/*
 
   android:
@@ -124,5 +125,6 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: Aurora ${{ env.TAG }}
           draft: false
-          prerelease: true
+          prerelease: false
+          make_latest: true
           files: out/*
