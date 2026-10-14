@@ -17,6 +17,8 @@ commands.allow = [
   "reload",
   "musicAccess",
   "musicFolder",
+  "vizStart",
+  "vizStop",
   "phoneFolders",
   "pickImage",
   "createDocument",

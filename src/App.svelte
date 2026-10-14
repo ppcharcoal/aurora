@@ -36,6 +36,7 @@
   import Setup from "./lib/views/Setup.svelte";
   import PhoneDock from "./lib/components/PhoneDock.svelte";
   import NowPlayingSheet from "./lib/components/NowPlayingSheet.svelte";
+  import Visualizer from "./lib/components/Visualizer.svelte";
   import { isAndroid } from "./lib/platform";
 
   let scroller = $state<HTMLElement>();
@@ -118,6 +119,7 @@
       else if (e.key === "ArrowRight" && player.current) player.seek(player.position + 5000);
       else if (e.key === "ArrowLeft" && player.current) player.seek(Math.max(0, player.position - 5000));
       else if (e.key.toLowerCase() === "q" && !e.ctrlKey) ui.queueOpen = !ui.queueOpen;
+      else if (e.key.toLowerCase() === "v" && !e.ctrlKey && player.current) ui.vizOpen = !ui.vizOpen;
     };
     const mouse = (e: MouseEvent) => {
       if (e.button === 3) ui.back(); // mouse "back" button
@@ -200,6 +202,7 @@
     <NowPlayingBar />
   {/if}
   {/if}
+  {#if ui.vizOpen && player.current}<Visualizer />{/if}
   <Toasts />
 </div>
 

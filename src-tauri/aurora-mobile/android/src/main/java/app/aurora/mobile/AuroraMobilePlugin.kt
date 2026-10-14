@@ -50,6 +50,8 @@ class DownloadArgs {
   lateinit var url: String
   lateinit var dir: String
   var stem: String? = null
+  /** Space saver: the smallest audio stream instead of the best. */
+  var small: Boolean = false
 }
 
 @InvokeArg
@@ -373,7 +375,7 @@ class AuroraMobilePlugin(private val activity: Activity) : Plugin(activity) {
     val args = invoke.parseArgs(DownloadArgs::class.java)
     io.execute {
       try {
-        val r = Extractor.download(activity, args.job, args.url, args.dir, args.stem) { pct, speed, eta ->
+        val r = Extractor.download(activity, args.job, args.url, args.dir, args.stem, args.small) { pct, speed, eta ->
           trigger("progress", JSObject().put("id", args.job).put("percent", pct).put("speed", speed).put("eta", eta))
         }
         invoke.resolve(r)
@@ -383,6 +385,38 @@ class AuroraMobilePlugin(private val activity: Activity) : Plugin(activity) {
         invoke.reject(e.message ?: "Download failed")
       }
     }
+  }
+
+  /* --------------------------- visualizer --------------------------- */
+
+  private var vizOn = false
+  private val vizTick = object : Runnable {
+    override fun run() {
+      if (!vizOn) return
+      val arr = JSArray()
+      for (v in Spectrum.bands(48)) arr.put(v)
+      trigger("spectrum", JSObject().put("b", arr))
+      main.postDelayed(this, 33)
+    }
+  }
+
+  /** Sends sound levels ("spectrum" events, ~30 a second) until vizStop. */
+  @Command
+  fun vizStart(invoke: Invoke) {
+    Spectrum.active = true
+    if (!vizOn) {
+      vizOn = true
+      main.post(vizTick)
+    }
+    invoke.resolve()
+  }
+
+  @Command
+  fun vizStop(invoke: Invoke) {
+    vizOn = false
+    Spectrum.active = false
+    main.removeCallbacks(vizTick)
+    invoke.resolve()
   }
 
   @Command

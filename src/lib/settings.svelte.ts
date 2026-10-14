@@ -2,12 +2,15 @@ import { profiles } from "./profiles.svelte";
 import { debouncedSaver, storeGet } from "./store";
 import { isAndroid } from "./platform";
 
-export type Quality = "original" | "best" | "320" | "192" | "128";
+/** "small" is the phone's space saver (smallest stream, about 48 kbps AAC). */
+export type Quality = "original" | "best" | "320" | "192" | "128" | "small";
 
 export interface Settings {
   /** Where downloaded MP3s go. Empty = Music\Aurora (asked on first download). */
   downloadFolder: string;
   quality: Quality;
+  /** Last visualizer style. */
+  vizMode: number;
   volume: number;
   reduceMotion: boolean;
   /** Old switch, kept for migration (now `background`). */
@@ -37,6 +40,7 @@ export interface Settings {
 const defaults: Settings = {
   downloadFolder: "",
   quality: "best",
+  vizMode: 0,
   volume: 0.8,
   reduceMotion: false,
   ambient: true,
@@ -61,9 +65,9 @@ class SettingsStore {
     this.value = { ...defaults, ...(saved ?? {}) };
     if (saved && saved.background === undefined && saved.ambient === false) this.value.background = "plain";
     if (saved && saved.searchSource === undefined && saved.verifiedSearch === false) this.value.searchSource = "youtube";
-    // Phones save the original stream (no converter on board).
+    // Phones save the stream as it comes (no converter on board): best or smallest.
     if (isAndroid) {
-      this.value.quality = "original";
+      if (this.value.quality !== "small") this.value.quality = "original";
       // Settings restored from a Windows backup: its folders and devices don't exist here.
       if (this.value.downloadFolder && !this.value.downloadFolder.startsWith("/")) this.value.downloadFolder = "";
       if (this.value.audioOutput && !this.value.audioOutput.id.includes("|")) this.value.audioOutput = null;

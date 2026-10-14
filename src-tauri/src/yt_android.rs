@@ -153,7 +153,8 @@ pub async fn yt_download(
     quality: String,
     tags: Option<TagMeta>,
 ) -> Result<String, String> {
-    let _ = quality; // Phones keep the original stream (no converter on board).
+    // Phones keep the stream as it is (no converter on board); "small" = space saver.
+    let small = quality == "small";
     downloads.canceled.lock().unwrap().retain(|x| x != &id);
 
     // Albums: "<folder>/Artist - Album/01 - Title"; catalog singles: "<folder>/Artist - Title".
@@ -187,7 +188,7 @@ pub async fn yt_download(
     }
 
     let (app2, job, url, dir_s, stem2) = (app.clone(), id.clone(), page_url(&id), dir.to_string_lossy().into_owned(), stem.clone());
-    let got = tauri::async_runtime::spawn_blocking(move || mobile(&app2).download(&job, &url, &dir_s, stem2.as_deref()))
+    let got = tauri::async_runtime::spawn_blocking(move || mobile(&app2).download(&job, &url, &dir_s, stem2.as_deref(), small))
         .await
         .map_err(|e| e.to_string())?;
     if downloads.canceled.lock().unwrap().contains(&id) {

@@ -38,6 +38,11 @@
     { v: "192", label: "192 kbps", note: "smaller" },
     { v: "128", label: "128 kbps", note: "smallest" },
   ];
+  // Phones keep the stream as it comes; they choose between the best and the smallest one.
+  const phoneQualities: { v: Quality; label: string; note: string }[] = [
+    { v: "original", label: "Standard", note: "≈128 kbps AAC" },
+    { v: "small", label: "Space saver", note: "≈48 kbps, ⅓ the size" },
+  ];
 
   /* ---------------- storage ---------------- */
   let slimEstimate = $state<{ files: number; bytes: number } | null>(null);
@@ -242,9 +247,19 @@
     </div>
 
     {#if isAndroid}
+      <span class="lbl">Quality</span>
+      <div class="seg two" role="radiogroup" aria-label="Quality">
+        {#each phoneQualities as q}
+          <button role="radio" aria-checked={settings.value.quality === q.v} class:on={settings.value.quality === q.v} onclick={() => settings.set("quality", q.v)}>
+            <strong>{q.label}</strong><small>{q.note}</small>
+          </button>
+        {/each}
+      </div>
       <p class="note">
-        On the phone, songs are saved exactly as the site sends them, without converting: YouTube as M4A (AAC), SoundCloud as MP3. Cover
-        art and tags are added like on the PC. They go to the Download/Aurora folder, which you can open in the Files app or on a PC over USB.
+        Songs are saved as the site sends them, without converting: YouTube as M4A (AAC), SoundCloud as MP3. <strong>Space saver</strong> picks
+        YouTube's smallest stream: about a third of the size, fine for headphones and the car, a little less detailed on a good speaker.
+        SoundCloud songs are the same either way. Cover art and tags are added like on the PC, and songs go to the Download/Aurora folder
+        (Files app, or a PC over USB).
       </p>
     {:else}
     <span class="lbl">Quality</span>
@@ -513,6 +528,9 @@
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 8px;
+  }
+  .seg.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .seg button {
     display: flex;

@@ -20,6 +20,7 @@
 - Playlists with drag-to-reorder and custom covers, a play queue with shuffle and repeat, and albums built from your tags.
 - Choose the audio output (speakers, headphones, Bluetooth, USB DAC) inside the app.
 - A look that follows the music: the accent colour comes from the cover art, with dark, light and system themes and a choice of backgrounds.
+- **Visualizer**: click (or tap) the playing song's cover for a full-screen visualizer in the spirit of the classic Windows Media Player ones: *Aurora*, *Spectrum*, *Halo* and *Ambience*, all reacting to the music in the cover's colours.
 
 **Keep track**
 - Profiles for everyone in the house, each with its own playlists, settings and listening stats: total time, a 14-day chart, top songs and artists.
@@ -30,6 +31,7 @@
 - Background playback with notification, lock-screen and Bluetooth controls.
 - **Android Auto**: browse Recent, Playlists, Albums and Songs in the car, or ask for music by voice.
 - Adds the music already on your phone, and saves downloads to `Download/Aurora`.
+- **Space saver** (Settings → Downloads): downloads YouTube's smallest stream, about a third of the size.
 
 ## Install
 

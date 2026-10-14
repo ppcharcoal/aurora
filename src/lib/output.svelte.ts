@@ -6,6 +6,9 @@ import { ui } from "./ui.svelte";
 
 export type OutputKind = NativeOutput["kind"];
 
+/** Anything that can play to a chosen device. */
+type Sink = HTMLMediaElement | AudioContext;
+
 export interface OutputDevice {
   id: string;
   label: string;
@@ -44,7 +47,8 @@ class AudioOutput {
   /** The chosen device isn't connected right now; the default plays instead. */
   missing = $state(false);
   busy = $state(false);
-  private els = new Set<HTMLMediaElement>();
+  /** Audio elements, and the visualizer's AudioContext once audio flows through it. */
+  private els = new Set<Sink>();
   private started = false;
 
   /** The device actually in use (null = system default). */
@@ -69,8 +73,8 @@ class AudioOutput {
     await this.applyAll();
   }
 
-  /** Every audio element that should follow the chosen device. */
-  attach(el: HTMLMediaElement) {
+  /** Every audio element (or AudioContext) that should follow the chosen device. */
+  attach(el: Sink) {
     this.els.add(el);
     if (!isAndroid) this.apply(el, this.sinkId()).catch(() => {});
   }
@@ -135,9 +139,9 @@ class AudioOutput {
     return this.missing ? "" : (settings.value.audioOutput?.id ?? "");
   }
 
-  private async apply(el: HTMLMediaElement, id: string) {
-    const m = el as HTMLMediaElement & { sinkId?: string; setSinkId?: (id: string) => Promise<void> };
-    if (!m.setSinkId || m.sinkId === id) return;
+  private async apply(el: Sink, id: string) {
+    const m = el as { sinkId?: unknown; setSinkId?: (id: string) => Promise<void> };
+    if (!m.setSinkId || (m.sinkId ?? "") === id) return;
     await m.setSinkId(id);
   }
 

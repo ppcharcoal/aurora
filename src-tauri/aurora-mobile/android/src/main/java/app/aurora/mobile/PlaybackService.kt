@@ -10,7 +10,11 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.TeeAudioProcessor
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
@@ -45,7 +49,16 @@ class PlaybackService : MediaLibraryService() {
 
   override fun onCreate() {
     super.onCreate()
-    player = ExoPlayer.Builder(this)
+    // A copy of the audio goes to the visualizer (Spectrum), which ignores it unless it's open.
+    val renderers = object : DefaultRenderersFactory(this) {
+      override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+        DefaultAudioSink.Builder(context)
+          .setEnableFloatOutput(enableFloatOutput)
+          .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+          .setAudioProcessors(arrayOf(TeeAudioProcessor(Spectrum)))
+          .build()
+    }
+    player = ExoPlayer.Builder(this, renderers)
       .setAudioAttributes(
         AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(),
         /* handleAudioFocus = */ true,

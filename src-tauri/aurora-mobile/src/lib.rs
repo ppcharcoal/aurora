@@ -98,19 +98,20 @@ impl<R: Runtime> AuroraMobile<R> {
     /// Downloads the best audio-only stream to `<dir>/<stem>.<ext>`, without
     /// converting it. Progress goes to the web UI as plugin event "progress"
     /// `{ id, percent, speed, eta }`. Blocks until done; call off the main thread.
-    pub fn download(&self, job: &str, url: &str, dir: &str, stem: Option<&str>) -> Result<Downloaded> {
+    /// `small`: space saver, the smallest stream (about 48 kbps AAC on YouTube).
+    pub fn download(&self, job: &str, url: &str, dir: &str, stem: Option<&str>, small: bool) -> Result<Downloaded> {
         #[cfg(target_os = "android")]
         {
             self.handle
                 .run_mobile_plugin(
                     "download",
-                    serde_json::json!({ "job": job, "url": url, "dir": dir, "stem": stem }),
+                    serde_json::json!({ "job": job, "url": url, "dir": dir, "stem": stem, "small": small }),
                 )
                 .map_err(|e| e.to_string())
         }
         #[cfg(not(target_os = "android"))]
         {
-            let _ = (job, url, dir, stem);
+            let _ = (job, url, dir, stem, small);
             Err(NOT_HERE.into())
         }
     }

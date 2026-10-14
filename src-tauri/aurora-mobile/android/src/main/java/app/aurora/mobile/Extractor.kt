@@ -113,12 +113,16 @@ object Extractor {
 
   private fun suffix(s: AudioStream) = s.format?.suffix ?: ""
 
-  /** The stream to download or play: M4A first (taggable, plays everywhere), then MP3, then anything. */
-  private fun pick(streams: List<AudioStream>, forDownload: Boolean): AudioStream? {
+  /**
+   * The stream to download or play: M4A first (taggable, plays everywhere), then MP3, then anything.
+   * `small` (space saver) takes the smallest M4A YouTube offers (about 48 kbps) instead of the best.
+   */
+  private fun pick(streams: List<AudioStream>, forDownload: Boolean, small: Boolean = false): AudioStream? {
     val original = streams.filter { it.audioTrackType == null || it.audioTrackType?.name == "ORIGINAL" }.ifEmpty { streams }
     val progressive = original.filter { it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP && it.isUrl }
     val byRate = compareBy<AudioStream> { it.averageBitrate }
-    progressive.filter { suffix(it) == "m4a" }.maxWithOrNull(byRate)?.let { return it }
+    val m4a = progressive.filter { suffix(it) == "m4a" }
+    (if (small) m4a.filter { it.averageBitrate > 0 }.minWithOrNull(byRate) ?: m4a.minWithOrNull(byRate) else m4a.maxWithOrNull(byRate))?.let { return it }
     progressive.filter { suffix(it) == "mp3" }.maxWithOrNull(byRate)?.let { return it }
     if (!forDownload) progressive.maxWithOrNull(byRate)?.let { return it }
     // SoundCloud often only offers HLS; MP3 segments can simply be joined.
@@ -159,13 +163,14 @@ object Extractor {
     url: String,
     dir: String,
     stem: String?,
+    small: Boolean,
     progress: (Double, String, String) -> Unit,
   ): JSObject {
     init()
     canceled.remove(job)
     val info = StreamInfo.getInfo(url)
     check(job)
-    val s = pick(info.audioStreams, forDownload = true) ?: throw IOException("No downloadable audio for this upload.")
+    val s = pick(info.audioStreams, forDownload = true, small = small) ?: throw IOException("No downloadable audio for this upload.")
     val ext = when (suffix(s)) {
       "m4a", "mp3", "opus", "ogg" -> suffix(s)
       "webm", "weba" -> "webm"

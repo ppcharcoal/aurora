@@ -46,10 +46,18 @@
     {#if t}
       {#key t.key}
         <div class="meta" in:fly={{ y: 10 * motion, duration: 380 * motion, delay: 60 * motion }} out:fade={{ duration: 120 * motion }}>
-          <div class="deck" class:playing={player.playing} role="presentation" oncontextmenu={(e) => ui.openMenu(e, trackMenu(t))}>
+          <button
+            class="deck"
+            class:playing={player.playing}
+            onclick={() => (ui.vizOpen = true)}
+            oncontextmenu={(e) => ui.openMenu(e, trackMenu(t))}
+            aria-label="Open the visualizer"
+            title="Visualizer (V)"
+          >
             <div class="record"><Vinyl art={t.art} spinning={player.playing} size="54px" /></div>
             <div class="sleeve"><Artwork src={t.art} size={58} eager /></div>
-          </div>
+            <span class="vizhint" aria-hidden="true"><Icon name="sparkle" size={18} /></span>
+          </button>
           <div class="text">
             <div class="title" title={t.title}>{t.title}</div>
             <div class="artist"><span title={t.artist}>{t.artist}</span></div>
@@ -164,6 +172,29 @@
     width: 92px;
     height: 58px;
     flex: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+  }
+  /* Hint that the cover opens the visualizer. */
+  .vizhint {
+    position: absolute;
+    z-index: 2;
+    left: 0;
+    top: 0;
+    width: 58px;
+    height: 58px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    color: #fff;
+    background: rgb(0 0 0 / 0.45);
+    opacity: 0;
+    transition: opacity var(--t-fast);
+  }
+  .deck:hover .vizhint,
+  .deck:focus-visible .vizhint {
+    opacity: 1;
   }
   .sleeve {
     position: relative;

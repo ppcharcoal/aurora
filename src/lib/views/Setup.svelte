@@ -174,7 +174,19 @@
             <p class="lead">Set a limit and Aurora won't download past it. Leave it at <b>No limit</b> to use whatever's free.</p>
             <DataLimit />
             <div class="opts" class:one={isAndroid}>
-              {#if !isAndroid}
+              {#if isAndroid}
+              <div>
+                <span class="lbl">Quality</span>
+                <div class="pair" role="radiogroup" aria-label="Quality">
+                  <button role="radio" aria-checked={settings.value.quality !== "small"} class:on={settings.value.quality !== "small"} onclick={() => settings.set("quality", "original")}>
+                    <strong>Standard</strong><small>Best sound, ≈128 kbps</small>
+                  </button>
+                  <button role="radio" aria-checked={settings.value.quality === "small"} class:on={settings.value.quality === "small"} onclick={() => settings.set("quality", "small")}>
+                    <strong>Space saver</strong><small>About ⅓ the size</small>
+                  </button>
+                </div>
+              </div>
+              {:else}
               <div>
                 <span class="lbl">File type</span>
                 <div class="pair" role="radiogroup" aria-label="File type">
@@ -204,7 +216,7 @@
                 <li><span>Look</span><b>{themeLabel}, {bgLabel?.toLowerCase()}</b></li>
                 <li><span>Last.fm</span><b>{lastfm.connected ? `Connected as ${lastfm.cfg.user}` : "Not connected"}</b></li>
                 <li><span>Data limit</span><b>{settings.value.dataLimit ? bytes(settings.value.dataLimit) : "No limit"}</b></li>
-                <li><span>Downloads</span><b>{isAndroid ? "Original audio" : settings.value.quality === "original" ? "Space saver" : "MP3"}</b></li>
+                <li><span>Downloads</span><b>{isAndroid ? (settings.value.quality === "small" ? "Space saver" : "Standard") : settings.value.quality === "original" ? "Space saver" : "MP3"}</b></li>
               </ul>
               <p class="lead">Search for a song or album at the top to get started. Everything here is in Settings and your profile later.</p>
             </div>

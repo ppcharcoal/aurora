@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { output } from "../output.svelte";
+import { spectrum } from "../spectrum";
 import type { Track } from "../types";
 
 export interface EngineEvents {
@@ -20,15 +21,36 @@ export class LocalEngine {
   constructor(private ev: EngineEvents) {
     const a = this.audio;
     a.preload = "auto";
+    // CORS mode, so the visualizer may read the sound (Tauri's file server allows it).
+    a.crossOrigin = "anonymous";
     output.attach(a);
+    spectrum.register(a);
     a.addEventListener("playing", () => ev.state(true));
     a.addEventListener("pause", () => ev.state(false));
     a.addEventListener("ended", () => ev.ended());
     a.addEventListener("loadedmetadata", () => {
       if (Number.isFinite(a.duration)) ev.duration?.(a.duration * 1000);
     });
-    a.addEventListener("error", () => {
-      if (!a.getAttribute("src")) return;
+    a.addEventListener("error", async () => {
+      const src = a.getAttribute("src");
+      if (!src) return;
+      // Safety net: if a file only failed because of CORS mode, play it without
+      // (the visualizer then can't read it). A missing file still answers, so it's reported.
+      if (a.crossOrigin && !spectrum.hooked) {
+        const corsFailed = await fetch(src, { method: "HEAD" }).then(
+          () => false,
+          () => true,
+        );
+        if (corsFailed) {
+          const at = a.currentTime;
+          a.removeAttribute("crossorigin");
+          spectrum.corsBroken();
+          a.src = src;
+          a.currentTime = at;
+          a.play().catch(() => {});
+          return;
+        }
+      }
       ev.error("Couldn't play this file — it may have been moved, or its format isn't supported.");
     });
   }

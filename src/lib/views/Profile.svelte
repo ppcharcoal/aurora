@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { covers } from "../covers.svelte";
   import { isAndroid } from "../platform";
   import { ask } from "@tauri-apps/plugin-dialog";
   import { library } from "../sources/local.svelte";
@@ -171,7 +172,7 @@
               <li>
                 <button class="hit" onclick={() => player.playList(topSongs.map((x) => x.t), i)} aria-label={`Play ${s.t.title}`}></button>
                 <span class="rank">{i + 1}</span>
-                <Artwork src={s.t.art} size={40} radius="6px" />
+                <Artwork src={s.t.art ?? covers.get(s.t.artist, s.t.title)} size={40} radius="6px" />
                 <span class="txt"><span class="tt">{s.t.title}</span><span class="ta">{s.t.artist}</span></span>
                 <span class="val">{dur(s.ms)}</span>
               </li>
@@ -209,6 +210,7 @@
               <li>
                 {#if mine}<button class="hit" onclick={() => player.playList([mine], 0)} aria-label={`Play ${it.title}`}></button>{/if}
                 <span class="rank">{i + 1}</span>
+                <Artwork src={mine?.art ?? covers.get(it.artist, it.title)} size={40} radius="6px" />
                 <span class="txt"><span class="tt">{it.title}</span><span class="ta">{it.artist}{mine ? "" : " — not downloaded"}</span></span>
                 <span class="val">{it.plays.toLocaleString()} plays</span>
               </li>

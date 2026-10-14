@@ -19,14 +19,24 @@
   let picking = $state(false);
 
   let startY: number | null = null;
+  let startX = 0;
+  let moved = 0;
+  let onCover = false;
   let drag = $state(0);
-  function down(e: PointerEvent) {
+  function down(e: PointerEvent, cover = false) {
+    onCover = cover;
     startY = e.clientY;
+    startX = e.clientX;
+    moved = 0;
   }
   function move(e: PointerEvent) {
-    if (startY !== null) drag = Math.max(0, e.clientY - startY);
+    if (startY === null) return;
+    drag = Math.max(0, e.clientY - startY);
+    moved = Math.max(moved, Math.abs(e.clientY - startY), Math.abs(e.clientX - startX));
   }
-  function up() {
+  function up(e: PointerEvent) {
+    // A tap (not a swipe) on the cover opens the visualizer.
+    if (e.type === "pointerup" && onCover && startY !== null && moved < 10) ui.vizOpen = true;
     if (drag > 110) ui.sheetOpen = false;
     startY = null;
     drag = 0;
@@ -53,7 +63,7 @@
       <button class="x" onclick={(e) => ui.openMenu(e, trackMenu(t))} aria-label="More"><Icon name="more" size={20} /></button>
     </header>
 
-    <div class="art" role="presentation" onpointerdown={down} onpointermove={move} onpointerup={up} onpointercancel={up}>
+    <div class="art" role="presentation" onpointerdown={(e) => down(e, true)} onpointermove={move} onpointerup={up} onpointercancel={up}>
       <div class="record" class:out={player.playing}><Vinyl art={t.art} spinning={player.playing} size="100%" /></div>
       <div class="sleeve"><Artwork src={t.art} size="100%" radius="14px" eager /></div>
     </div>

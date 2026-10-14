@@ -32,6 +32,8 @@ class UI {
   phone = $state(false);
   /** Phone: the full-screen now-playing view is open. */
   sheetOpen = $state(false);
+  /** Full-screen music visualizer (opened from the playing song's cover). */
+  vizOpen = $state(false);
   searchMode = $state<"songs" | "albums">("songs");
   toasts = $state<Toast[]>([]);
   menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);

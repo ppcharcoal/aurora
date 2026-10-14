@@ -40,7 +40,10 @@
 
   // Phones keep the original stream only, so there's one estimate.
   const qualities = isAndroid
-    ? [{ v: "original", label: "About" }]
+    ? [
+        { v: "original", label: "Standard" },
+        { v: "small", label: "Space saver" },
+      ]
     : [
         { v: "original", label: "Space saver" },
         { v: "best", label: "Best MP3" },
@@ -85,7 +88,7 @@
     {#each ticks as t}<button style:left={`${(t.at / last) * 100}%`} onclick={() => ((step = t.at), commit())}>{t.label}</button>{/each}
   </div>
 
-  <div class="fits" class:one={qualities.length === 1}>
+  <div class="fits" class:one={qualities.length === 1} class:two={qualities.length === 2}>
     {#each qualities as q}
       <div class="fit" class:on={settings.value.quality === q.v}>
         <span>{q.label}</span>
@@ -211,6 +214,9 @@
     grid-template-columns: repeat(3, 1fr);
     gap: 8px;
     margin-top: 14px;
+  }
+  .fits.two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .fits.one {
     grid-template-columns: minmax(0, 1fr);

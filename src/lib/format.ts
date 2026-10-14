@@ -22,7 +22,7 @@ export function greeting(): string {
 }
 
 /** MP3 bitrate (kbit/s) used for size estimates; "best" (VBR V0) averages about 210 on YouTube sources. */
-const KBPS: Record<string, number> = { original: 135, best: 210, "320": 320, "192": 192, "128": 128 };
+const KBPS: Record<string, number> = { original: 135, best: 210, "320": 320, "192": 192, "128": 128, small: 50 };
 
 /** Estimated file size in bytes for a duration at a quality setting (+ embedded cover). */
 export function estimateBytes(durationMs: number, quality: string): number {

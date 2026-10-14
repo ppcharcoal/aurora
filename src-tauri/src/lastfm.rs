@@ -146,61 +146,71 @@ pub async fn lastfm_call(
     call_raw(&k, &method, params, sk.as_deref(), write.unwrap_or(false)).await
 }
 
-/// Browser sign-in: Last.fm redirects back to a local port with ?token=…,
-/// which is exchanged for a permanent session key.
+/// Browser sign-in, the way Last.fm's own desktop apps do it:
+/// 1. ask Last.fm for a token, 2. open the approval page for that token,
+/// 3. keep asking Last.fm for a session until the user has approved.
+/// Step 3 doesn't depend on the browser coming back to Aurora, which phones
+/// don't reliably do. On a PC the page also redirects to a small local page
+/// that says "you can close this tab" (if that port is free).
 #[tauri::command]
 pub async fn lastfm_login(app: AppHandle) -> Result<Session, String> {
     let k = keys(&app)?;
-    let listener = TcpListener::bind(("127.0.0.1", CALLBACK_PORT))
-        .await
-        .map_err(|e| format!("Couldn't open port {CALLBACK_PORT} for the sign-in: {e}"))?;
-    let cb = format!("http://127.0.0.1:{CALLBACK_PORT}/lastfm");
-    let url = url::Url::parse_with_params("https://www.last.fm/api/auth/", &[("api_key", k.api_key.as_str()), ("cb", cb.as_str())])
-        .map_err(|e| e.to_string())?;
+    let v = call_raw(&k, "auth.getToken", BTreeMap::new(), None, false).await?;
+    let token = v.get("token").and_then(|t| t.as_str()).ok_or("Last.fm didn't return a sign-in token.")?.to_string();
+
+    // Optional "done" page. Not needed for the sign-in itself.
+    let listener = TcpListener::bind(("127.0.0.1", CALLBACK_PORT)).await.ok();
+    let mut params: Vec<(&str, String)> = vec![("api_key", k.api_key.clone()), ("token", token.clone())];
+    if listener.is_some() && !cfg!(aurora_android) {
+        params.push(("cb", format!("http://127.0.0.1:{CALLBACK_PORT}/lastfm")));
+    }
+    let url = url::Url::parse_with_params("https://www.last.fm/api/auth/", &params).map_err(|e| e.to_string())?;
     app.opener()
         .open_url(url.as_str(), None::<&str>)
         .map_err(|e| format!("Couldn't open the browser: {e}"))?;
+    let page = listener.map(|l| tauri::async_runtime::spawn(serve_done_page(l)));
 
-    let token = tokio::time::timeout(Duration::from_secs(300), async {
+    let result = tokio::time::timeout(Duration::from_secs(600), async {
         loop {
-            let (mut stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
-            let mut buf = vec![0u8; 8192];
-            let n = stream.read(&mut buf).await.map_err(|e| e.to_string())?;
-            let req = String::from_utf8_lossy(&buf[..n]);
-            let target = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/");
-            if !target.starts_with("/lastfm") {
-                let _ = stream.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n").await;
-                continue;
+            tokio::time::sleep(Duration::from_secs(3)).await;
+            let mut p = BTreeMap::new();
+            p.insert("token".to_string(), token.clone());
+            match call_raw(&k, "auth.getSession", p, None, false).await {
+                Ok(v) => return Ok(v),
+                // 14: not approved yet. Temporary network trouble: keep waiting.
+                Err(e) if e.starts_with("Last.fm error 14") || e.starts_with("LASTFM_RETRY") => continue,
+                Err(e) if e.starts_with("Last.fm error 15") || e.starts_with("Last.fm error 4") => {
+                    return Err("The Last.fm sign-in expired. Please try again.".to_string())
+                }
+                Err(e) => return Err(e),
             }
-            let parsed = url::Url::parse(&format!("http://127.0.0.1{target}")).map_err(|e| e.to_string())?;
-            let token = parsed.query_pairs().find(|(k, _)| k == "token").map(|(_, v)| v.into_owned());
-            let (title, body) = if token.is_some() {
-                ("Connected to Last.fm", "You can close this tab and go back to Aurora.")
-            } else {
-                ("Sign-in cancelled", "Go back to Aurora and try again.")
-            };
-            let html = format!(
-                "<!doctype html><meta charset=utf-8><title>Aurora</title><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#15121c;color:#f1edf7;font:16px 'Segoe UI',sans-serif\"><div style=text-align:center><h1 style=font-weight:600>{title}</h1><p style=opacity:.7>{body}</p></div>"
-            );
-            let resp = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
-                html.len()
-            );
-            let _ = stream.write_all(resp.as_bytes()).await;
-            return token.ok_or_else(|| "Last.fm sign-in was cancelled.".to_string());
         }
     })
-    .await
-    .map_err(|_| "Last.fm sign-in timed out.".to_string())??;
-
-    let mut p = BTreeMap::new();
-    p.insert("token".to_string(), token);
-    let v = call_raw(&k, "auth.getSession", p, None, false).await?;
+    .await;
+    if let Some(h) = page {
+        h.abort();
+    }
+    let v = result.map_err(|_| "Last.fm sign-in timed out. Please try again.".to_string())??;
     let s = v.get("session").ok_or("Last.fm didn't return a session.")?;
     Ok(Session {
         name: s.get("name").and_then(|n| n.as_str()).unwrap_or_default().to_string(),
         key: s.get("key").and_then(|n| n.as_str()).ok_or("Last.fm didn't return a session key.")?.to_string(),
     })
+}
+
+/// Answers the browser after the approval with a small "you're connected" page.
+async fn serve_done_page(listener: TcpListener) {
+    loop {
+        let Ok((mut stream, _)) = listener.accept().await else { return };
+        let mut buf = vec![0u8; 8192];
+        let _ = stream.read(&mut buf).await;
+        let html = "<!doctype html><meta charset=utf-8><meta name=viewport content=\"width=device-width\"><title>Aurora</title><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#15121c;color:#f1edf7;font:16px 'Segoe UI',sans-serif\"><div style=text-align:center><h1 style=font-weight:600>Connected to Last.fm</h1><p style=opacity:.7>You can close this tab and go back to Aurora.</p></div>";
+        let resp = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{html}",
+            html.len()
+        );
+        let _ = stream.write_all(resp.as_bytes()).await;
+    }
 }
 
 #[cfg(test)]
