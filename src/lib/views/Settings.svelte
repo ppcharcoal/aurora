@@ -1,8 +1,8 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
-  import { audioDir, documentDir, join } from "@tauri-apps/api/path";
-  import { ask, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
+  import { join } from "@tauri-apps/api/path";
+  import { ask, message, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
   import { flushSaves, pauseSaves } from "../store";
@@ -17,7 +17,7 @@
   import DataLimit from "../components/DataLimit.svelte";
   import OutputPicker from "../components/OutputPicker.svelte";
   import PhoneMusic from "../components/PhoneMusic.svelte";
-  import { defaultMusicFolder, isOldPhoneDefault, native, prettyPath } from "../native";
+  import { defaultMusicFolder, documentsDir, isOldPhoneDefault, musicDir, native, prettyPath } from "../native";
 
   async function addFolder() {
     const dir = await openDialog({ directory: true, multiple: false, title: "Choose a music folder" });
@@ -124,7 +124,7 @@
     if (isAndroid) return createBackupPhone(name);
     const dest = await saveDialog({
       title: "Save backup as",
-      defaultPath: await join(await documentDir(), name),
+      defaultPath: await join(await documentsDir(), name),
       filters: [{ name: "Zip archive", extensions: ["zip"] }],
     });
     if (!dest) return;
@@ -189,6 +189,14 @@
 
   async function restoreBackup() {
     if (isAndroid) return restoreBackupPhone();
+    try {
+      await restoreBackupDesktop();
+    } catch (e) {
+      ui.error(e);
+    }
+  }
+
+  async function restoreBackupDesktop() {
     const zip = await openDialog({
       title: "Choose an Aurora backup",
       multiple: false,
@@ -200,7 +208,7 @@
       title: "Where should the restored music go?",
       directory: true,
       multiple: false,
-      defaultPath: await audioDir(),
+      defaultPath: await musicDir(),
     });
     if (typeof musicDest !== "string") return;
     const ok = await ask(
@@ -217,10 +225,14 @@
       ui.toast(`Restored ${r.tracks} songs${r.skipped ? ` (${r.skipped} skipped)` : ""}. Restarting…`, "success");
       setTimeout(() => location.reload(), 1200);
     } catch (e) {
-      ui.error(e);
       busy = null;
       bprog = null;
-      location.reload(); // saves were paused; reload to get back to a consistent state
+      // Saves were paused, so the app restarts; show why first (a toast would vanish).
+      await message(`The backup couldn't be restored:\n\n${e instanceof Error ? e.message : String(e)}`, {
+        title: "Restore didn't work",
+        kind: "error",
+      }).catch(() => {});
+      location.reload();
     }
   }
 

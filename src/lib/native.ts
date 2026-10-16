@@ -53,8 +53,8 @@ export async function defaultMusicFolder(): Promise<string> {
       /* older app build: fall through */
     }
   }
-  const { audioDir, join } = await import("@tauri-apps/api/path");
-  return join(await audioDir(), "Aurora");
+  const { join } = await import("@tauri-apps/api/path");
+  return join(await musicDir(), "Aurora");
 }
 
 /** "/storage/emulated/0/Download/Aurora" → "Download/Aurora" (how the Files app shows it). */
@@ -63,3 +63,27 @@ export const prettyPath = (p: string) =>
 
 /** The phone version's first default (inside Android/data, hard to find). */
 export const isOldPhoneDefault = (p: string) => /\/Android\/data\/[^/]+\/files\/Music\/Aurora\/?$/.test(p);
+
+/**
+ * The user's Music folder. Linux only knows it when the XDG user folders are
+ * set up (xdg-user-dirs); many minimal setups (Hyprland, Sway…) don't have
+ * that, so fall back to ~/Music instead of failing.
+ */
+export async function musicDir(): Promise<string> {
+  const p = await import("@tauri-apps/api/path");
+  try {
+    return await p.audioDir();
+  } catch {
+    return p.join(await p.homeDir(), "Music");
+  }
+}
+
+/** The Documents folder, or the home folder when the system doesn't name one. */
+export async function documentsDir(): Promise<string> {
+  const p = await import("@tauri-apps/api/path");
+  try {
+    return await p.documentDir();
+  } catch {
+    return p.homeDir();
+  }
+}

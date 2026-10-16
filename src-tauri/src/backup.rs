@@ -596,6 +596,48 @@ pub async fn backup_restore_fd(app: AppHandle, fd: i32, music_dest: String) -> R
 mod tests {
     use super::*;
 
+    /// A backup made on Windows (C:\ paths) restores on Linux / Android:
+    /// files land under the chosen folder and every reference is remapped.
+    #[test]
+    fn windows_backup_restores_elsewhere() {
+        use std::io::Write as _;
+        let base = std::env::temp_dir().join(format!("aurora-win-{}", rand::random::<u32>()));
+        let (data, dest) = (base.join("data"), base.join("Music"));
+        fs::create_dir_all(&data).unwrap();
+        let win_root = r"C:\Users\me\Music\Aurora";
+        let win_song = r"C:\Users\me\Music\Aurora\Kanye West - Graduation\01 - Good Morning.m4a";
+        let old_id = hash_hex(win_song, 16);
+        let manifest = serde_json::json!({
+            "app": "aurora", "format": FORMAT, "created": 0, "include_music": true,
+            "folders": [{"orig": win_root, "zip": "Aurora"}],
+            "tracks": [{"id": old_id, "orig": win_song, "zip": "music/Aurora/Kanye West - Graduation/01 - Good Morning.m4a"}]
+        });
+        let zip_path = base.join("backup.zip");
+        {
+            let mut z = zip::ZipWriter::new(File::create(&zip_path).unwrap());
+            let o = zip::write::SimpleFileOptions::default();
+            z.start_file("manifest.json", o).unwrap();
+            z.write_all(manifest.to_string().as_bytes()).unwrap();
+            z.start_file("music/Aurora/Kanye West - Graduation/01 - Good Morning.m4a", o).unwrap();
+            z.write_all(b"audio").unwrap();
+            z.start_file("data/p-x-playlists.json", o).unwrap();
+            z.write_all(serde_json::json!([{"id": "pl", "trackIds": [old_id]}]).to_string().as_bytes()).unwrap();
+            z.start_file("data/p-x-settings.json", o).unwrap();
+            z.write_all(serde_json::json!({"downloadFolder": win_root}).to_string().as_bytes()).unwrap();
+            z.finish().unwrap();
+        }
+        let r = restore(&data, &zip_path, &dest, &|_| {}).unwrap();
+        assert_eq!(r.tracks, 1);
+        let new_song = dest.join("Aurora").join("Kanye West - Graduation").join("01 - Good Morning.m4a");
+        assert_eq!(fs::read(&new_song).unwrap(), b"audio");
+        assert_eq!(r.folders, vec![dest.join("Aurora").to_string_lossy().into_owned()]);
+        let pl: Value = serde_json::from_slice(&fs::read(data.join("p-x-playlists.json")).unwrap()).unwrap();
+        assert_eq!(pl[0]["trackIds"][0], hash_hex(&new_song.to_string_lossy(), 16));
+        let st: Value = serde_json::from_slice(&fs::read(data.join("p-x-settings.json")).unwrap()).unwrap();
+        assert_eq!(st["downloadFolder"], dest.join("Aurora").to_string_lossy().as_ref());
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn round_trip_remaps_ids_and_paths() {
         let base = std::env::temp_dir().join(format!("aurora-test-{}", rand::random::<u32>()));

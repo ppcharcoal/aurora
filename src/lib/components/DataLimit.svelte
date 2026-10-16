@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { musicDir } from "../native";
   import { invoke } from "@tauri-apps/api/core";
-  import { audioDir } from "@tauri-apps/api/path";
   import { bytes } from "../format";
   import { count, LIMIT_STEPS, limitAt, songsFit, stepOf } from "../limit";
   import { settings } from "../settings.svelte";
@@ -20,7 +20,7 @@
   let disk = $state<{ free: number; total: number } | null>(null);
   $effect(() => {
     const f = settings.value.downloadFolder || library.folders[0];
-    (f ? Promise.resolve(f) : audioDir())
+    (f ? Promise.resolve(f) : musicDir())
       .then((path) => invoke<{ free: number; total: number }>("disk_space", { path }))
       .then((d) => (disk = d), () => (disk = null));
   });

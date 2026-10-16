@@ -1,6 +1,6 @@
 import { profiles } from "./profiles.svelte";
 import { debouncedSaver, storeGet } from "./store";
-import { isAndroid } from "./platform";
+import { isAndroid, isLinux } from "./platform";
 
 /** "small" is the phone's space saver (smallest stream, about 48 kbps AAC). */
 export type Quality = "original" | "best" | "320" | "192" | "128" | "small";
@@ -71,6 +71,15 @@ class SettingsStore {
       // Settings restored from a Windows backup: its folders and devices don't exist here.
       if (this.value.downloadFolder && !this.value.downloadFolder.startsWith("/")) this.value.downloadFolder = "";
       if (this.value.audioOutput && !this.value.audioOutput.id.includes("|")) this.value.audioOutput = null;
+    } else {
+      // Settings restored from another kind of device (a Windows backup on
+      // Linux, a phone backup on a PC…): drop what can't work here.
+      const f = this.value.downloadFolder;
+      const windowsPath = /^[A-Za-z]:[\\/]|^\\\\/.test(f);
+      const phonePath = f.startsWith("/storage/") || f.startsWith("/sdcard/") || f.includes("/Android/data/");
+      if (f && (isLinux ? windowsPath || phonePath || !f.startsWith("/") : !windowsPath)) this.value.downloadFolder = "";
+      if (isLinux || this.value.audioOutput?.id.includes("|")) this.value.audioOutput = null;
+      if (this.value.quality === "small") this.value.quality = "best";
     }
   }
 
