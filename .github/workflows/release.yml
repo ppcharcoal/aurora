@@ -16,6 +16,10 @@ on:
       tag:
         description: "Release tag to create or update, e.g. v0.2.0"
         required: true
+      only:
+        description: "Build only these (any of: windows linux android)"
+        required: false
+        default: "windows linux android"
 
 permissions:
   contents: write
@@ -25,6 +29,7 @@ env:
 
 jobs:
   windows:
+    if: github.event_name == 'push' || contains(github.event.inputs.only, 'windows')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -65,6 +70,7 @@ jobs:
 
   linux:
     # The oldest supported Ubuntu, so the .deb and AppImage run on older systems too.
+    if: github.event_name == 'push' || contains(github.event.inputs.only, 'linux')
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v5
@@ -77,12 +83,14 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # Errors are repeated as annotations (shown on the run's summary page).
       - name: System libraries
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev \
-            patchelf file libssl-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav
+          sudo apt-get update -q || true
+          sudo apt-get install -y --no-install-recommends libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev \
+            patchelf file libssl-dev pkg-config build-essential \
+            gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav > /tmp/apt.log 2>&1 \
+            || { tail -n 20 /tmp/apt.log | sed 's/^/::error::/'; exit 1; }
 
       - name: Last.fm key (optional)
         env:
@@ -91,7 +99,11 @@ jobs:
           if [ -n "$LASTFM_KEY_JSON" ]; then printf '%s' "$LASTFM_KEY_JSON" > src-tauri/lastfm-key.json; fi
 
       - run: npm ci
-      - run: npx tauri build --bundles deb,appimage
+      - name: Build
+        run: |
+          npx tauri build --bundles deb,appimage > /tmp/build.log 2>&1 \
+            || { tail -n 30 /tmp/build.log | sed 's/^/::error::/'; exit 1; }
+          tail -n 5 /tmp/build.log
 
       - name: Rename, and make the Arch PKGBUILD
         run: |
@@ -110,6 +122,7 @@ jobs:
           files: out/*
 
   android:
+    if: github.event_name == 'push' || contains(github.event.inputs.only, 'android')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
