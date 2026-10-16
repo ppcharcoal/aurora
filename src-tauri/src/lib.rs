@@ -101,7 +101,6 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     ]
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// WebKitGTK draws a blank or flickering window on NVIDIA with Wayland
 /// compositors such as Hyprland unless its DMA-BUF renderer is turned off.
 /// Only done when the NVIDIA driver is loaded and the user hasn't chosen.
@@ -112,6 +111,7 @@ fn linux_display_fixes() {
     }
 }
 
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_display_fixes();
     tauri::Builder::default()
