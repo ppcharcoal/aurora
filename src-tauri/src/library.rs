@@ -20,7 +20,8 @@ use lofty::picture::PictureType;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager, State};
+use crate::rt::AppHandle;
+use tauri::{Emitter, Manager, State};
 use walkdir::WalkDir;
 
 use crate::store::{data_dir, write_atomic};

@@ -1,6 +1,6 @@
 import type { IconName } from "./components/Icon.svelte";
 import { native, type NativeOutput } from "./native";
-import { isAndroid, isLinux } from "./platform";
+import { isAndroid, systemPicksOutput } from "./platform";
 import { settings } from "./settings.svelte";
 import { ui } from "./ui.svelte";
 
@@ -68,7 +68,7 @@ class AudioOutput {
       if (want) native.call("output", { id: want.id }).catch(() => {});
       return;
     }
-    if (isLinux) return; // the system's sound settings choose the device
+    if (systemPicksOutput) return; // the system's sound settings choose the device
     navigator.mediaDevices?.addEventListener("devicechange", () => this.refresh().then(() => this.applyAll()));
     await this.refresh();
     await this.applyAll();
@@ -95,7 +95,7 @@ class AudioOutput {
         return;
       }
       const md = navigator.mediaDevices;
-      if (isLinux || !md?.enumerateDevices) return;
+      if (systemPicksOutput || !md?.enumerateDevices) return;
       if (askAccess) {
         try {
           const s = await md.getUserMedia({ audio: true });

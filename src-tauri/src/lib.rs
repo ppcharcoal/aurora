@@ -13,11 +13,27 @@ mod tools;
 mod yt;
 #[cfg(aurora_android)]
 mod yt_android;
+#[cfg(feature = "core")]
+mod core;
 
+/// Which Tauri runtime the commands run on: the real window (Wry), or none
+/// for `aurora-core`, the window-less helper behind the Electron Linux app.
+pub(crate) mod rt {
+    #[cfg(feature = "core")]
+    pub type Rt = tauri::test::MockRuntime;
+    #[cfg(not(feature = "core"))]
+    pub type Rt = tauri::Wry;
+    pub type AppHandle = tauri::AppHandle<Rt>;
+}
+
+#[cfg(feature = "core")]
+pub use crate::core::main as core_main;
+
+#[cfg(not(feature = "core"))]
 use tauri::Manager;
 
 #[cfg(not(aurora_android))]
-fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+fn handlers() -> impl Fn(tauri::ipc::Invoke<rt::Rt>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
             store::store_get,
             store::store_set,
@@ -61,7 +77,7 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
 
 /// The phone build: same commands, with Android versions of the download ones.
 #[cfg(aurora_android)]
-fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+fn handlers() -> impl Fn(tauri::ipc::Invoke<rt::Rt>) -> bool + Send + Sync + 'static {
     tauri::generate_handler![
             store::store_get,
             store::store_set,
@@ -110,6 +126,7 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
 /// Wayland compositors such as Hyprland it can also give a blank window.
 /// So it's off on Linux unless the user sets the variable themselves, or
 /// AURORA_DMABUF=1 to keep it.
+#[cfg(not(feature = "core"))]
 fn linux_display_fixes() {
     #[cfg(target_os = "linux")]
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && std::env::var_os("AURORA_DMABUF").is_none() {
@@ -117,6 +134,7 @@ fn linux_display_fixes() {
     }
 }
 
+#[cfg(not(feature = "core"))]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     linux_display_fixes();

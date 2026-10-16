@@ -25,7 +25,8 @@ use lofty::prelude::*;
 use lofty::tag::TagType;
 use rayon::prelude::*;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use crate::rt::AppHandle;
+use tauri::{Emitter, Manager};
 
 use crate::library::LibraryState;
 

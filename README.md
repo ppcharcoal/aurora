@@ -43,7 +43,9 @@
 
 ### Linux
 
-**Arch Linux (and Manjaro, EndeavourOS…)**: install it as a normal package with the `PKGBUILD` from the release. It pulls in everything Aurora needs (WebKitGTK, GStreamer codecs, yt-dlp, FFmpeg and Deno):
+The Linux app is built with Electron, so it draws with Chromium: smooth on NVIDIA and AMD, native on Wayland (Hyprland, Sway, GNOME, KDE) and at your monitor's full refresh rate.
+
+**Arch Linux (and Manjaro, EndeavourOS…)**: install it as a normal package with the `PKGBUILD` from the release. It pulls in everything Aurora needs (yt-dlp, FFmpeg, Deno and mutagen for tagging):
 
 ```sh
 mkdir -p ~/aurora-pkg && cd ~/aurora-pkg
@@ -51,22 +53,22 @@ curl -LO https://github.com/ppcharcoal/aurora/releases/latest/download/PKGBUILD
 makepkg -si
 ```
 
-Then start **Aurora** from your app launcher (wofi, rofi, fuzzel…) or run `aurora`. To update, run the same three commands again; to remove it, `sudo pacman -R aurora-player-bin`.
+Then start **Aurora** from your app launcher (wofi, rofi, fuzzel…) or run `aurora`. To update, run the same three commands again; to remove it, `sudo pacman -R aurora-player-bin`. Your music, profiles and playlists stay in `~/.local/share/app.aurora.player` either way.
 
 **Hyprland**: Aurora works as a normal tiled window and switches to its compact layout in narrow tiles. A few optional lines for `~/.config/hypr/hyprland.conf`:
 
 ```ini
-bind = $mainMod, M, exec, aurora                                    # open Aurora with Super+M
-windowrulev2 = float, class:^(aurora|Aurora|app\.aurora\.player)$   # optional: float it instead of tiling
+bind = $mainMod, M, exec, aurora                       # open Aurora with Super+M
+windowrulev2 = float, class:^(aurora|Aurora)$          # optional: float it instead of tiling
 ```
 
-`hyprctl clients` shows Aurora's exact window class while it's open. If `playerctl -l` lists Aurora, your media keys can control it with the usual `playerctl play-pause` binds.
+Media keys work through MPRIS: bind them to `playerctl play-pause`, `playerctl next` and `playerctl previous`.
 
-Aurora turns off WebKitGTK's DMA-BUF renderer by itself: with it, playback used far more CPU (lag, stuttering music) and NVIDIA could show a blank window. To try it anyway, start Aurora with `AURORA_DMABUF=1 aurora`. If the window is blank, start it with `WEBKIT_DISABLE_COMPOSITING_MODE=1 aurora`.
+**NVIDIA**: use driver 555 or newer (`pacman -Q nvidia-utils`) for smooth Wayland drawing. If the window is black or flickers on an older driver, start Aurora with `AURORA_GPU=0 aurora` to draw without the graphics card.
 
 **Other distributions**: use the `.deb` (Debian, Ubuntu, Mint: `sudo apt install ./Aurora-…-linux-amd64.deb`) or the `.AppImage` (`chmod +x Aurora-…-linux-x86_64.AppImage`, then run it). Also install **yt-dlp**, **FFmpeg** and **Deno** (or Node.js) from your package manager; Aurora tells you if one is missing.
 
-Audio output: Aurora plays through your system's default output. To send it elsewhere, use your desktop's sound menu or **pavucontrol** → Playback.
+Audio output: choose speakers, headphones or Bluetooth in **Settings → Audio output**, or leave it on *System default* to follow your desktop's sound settings.
 
 ### Android 7 or newer
 
@@ -86,7 +88,7 @@ Aurora downloads from YouTube and SoundCloud, whose terms generally don't allow 
 
 ## Building it yourself
 
-Aurora is built with [Tauri 2](https://tauri.app) (Rust) and [Svelte 5](https://svelte.dev). It uses the system's web view, so it stays small and light. Downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org) on Windows, and [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) on Android.
+Aurora is built with [Tauri 2](https://tauri.app) (Rust) and [Svelte 5](https://svelte.dev). On Windows and Android it uses the system's web view, so it stays small and light; on Linux the same interface runs in [Electron](https://www.electronjs.org), with the same Rust code as a background helper. Downloads use [yt-dlp](https://github.com/yt-dlp/yt-dlp) and [FFmpeg](https://ffmpeg.org) on Windows, and [NewPipe Extractor](https://github.com/TeamNewPipe/NewPipeExtractor) on Android.
 
 See **[docs/BUILDING.md](docs/BUILDING.md)** for building both apps, publishing releases, setting up the Last.fm key, and how the code is organised.
 

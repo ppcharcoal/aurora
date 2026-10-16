@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use image::imageops::FilterType;
 use serde::Serialize;
-use tauri::{AppHandle, Manager};
+use crate::rt::AppHandle;
+use tauri::{Manager};
 
 use crate::store::data_dir;
 

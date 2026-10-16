@@ -1,9 +1,9 @@
 {
   "name": "aurora",
   "private": true,
-  "version": "0.3.3",
+  "version": "0.4.0",
   "type": "module",
-  "description": "Aurora \u2014 a fast, good-looking player for your own music, with YouTube/SoundCloud downloads.",
+  "description": "Aurora — a fast, good-looking player for your own music, with YouTube/SoundCloud downloads.",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -14,7 +14,11 @@
     "android:init": "tauri android init && node scripts/android-setup.mjs",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk --split-per-abi --target aarch64",
-    "android:signing": "node scripts/android-signing.mjs"
+    "android:signing": "node scripts/android-signing.mjs",
+    "linux:core": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin aurora-core --no-default-features --features core",
+    "linux:ui": "vite build --mode electron",
+    "linux:start": "npm run linux:core && npm run linux:ui && npm --prefix electron start -- --no-sandbox",
+    "linux:build": "npm run linux:core && npm run linux:ui && npm --prefix electron run dist"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

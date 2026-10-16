@@ -1,6 +1,6 @@
 import { profiles } from "./profiles.svelte";
 import { debouncedSaver, storeGet } from "./store";
-import { isAndroid, isLinux } from "./platform";
+import { isAndroid, isLinux, systemPicksOutput } from "./platform";
 
 /** "small" is the phone's space saver (smallest stream, about 48 kbps AAC). */
 export type Quality = "original" | "best" | "320" | "192" | "128" | "small";
@@ -78,7 +78,7 @@ class SettingsStore {
       const windowsPath = /^[A-Za-z]:[\\/]|^\\\\/.test(f);
       const phonePath = f.startsWith("/storage/") || f.startsWith("/sdcard/") || f.includes("/Android/data/");
       if (f && (isLinux ? windowsPath || phonePath || !f.startsWith("/") : !windowsPath)) this.value.downloadFolder = "";
-      if (isLinux || this.value.audioOutput?.id.includes("|")) this.value.audioOutput = null;
+      if (systemPicksOutput || this.value.audioOutput?.id.includes("|")) this.value.audioOutput = null;
       if (this.value.quality === "small") this.value.quality = "best";
     }
   }

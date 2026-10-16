@@ -4,13 +4,14 @@
 //!
 //! - Only reachable from this computer (loopback), on a random port.
 //! - Every URL carries a random secret, so other programs can't guess them.
-//! - Only audio files inside folders Aurora may read (its library folders and
+//! - Only audio files (and cover pictures) inside folders Aurora may read (its library folders and
 //!   preview cache, the same list as the asset scope) are served.
 //! - Supports Range requests, so seeking works.
 
 use std::path::{Path, PathBuf};
 
-use tauri::{AppHandle, Manager};
+use crate::rt::AppHandle;
+use tauri::{Manager};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -59,6 +60,13 @@ const AUDIO: &[(&str, &str)] = &[
     ("flac", "audio/flac"),
     ("wav", "audio/wav"),
     ("webm", "audio/webm"),
+    // Covers and pictures (the Electron build shows these from here too).
+    ("jpg", "image/jpeg"),
+    ("jpeg", "image/jpeg"),
+    ("png", "image/png"),
+    ("webp", "image/webp"),
+    ("gif", "image/gif"),
+    ("bmp", "image/bmp"),
 ];
 
 fn content_type(p: &Path) -> Option<&'static str> {

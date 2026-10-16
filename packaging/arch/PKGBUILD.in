@@ -1,8 +1,10 @@
 # Maintainer: ppcharcoal
 #
-# Installs Aurora from the .deb on the GitHub release (built on GitHub, using
-# Arch's own WebKitGTK and GStreamer). Made by scripts/arch-pkgbuild.mjs for
-# every release; download it from the release page and run `makepkg -si`.
+# Installs Aurora from the .deb on the GitHub release (built on GitHub). Since
+# 0.4 the Linux app is Electron (Chromium) plus Aurora's Rust helper,
+# `aurora-core`; it no longer uses WebKitGTK or GStreamer. Made by
+# scripts/arch-pkgbuild.mjs for every release; download it from the release
+# page and run `makepkg -si`.
 pkgname=aurora-player-bin
 pkgver=@VERSION@
 pkgrel=1
@@ -10,8 +12,7 @@ pkgdesc="Music player for your own library: find and download songs and albums, 
 arch=('x86_64')
 url="https://github.com/ppcharcoal/aurora"
 license=('MIT')
-depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'gst-plugins-base' 'gst-plugins-good' 'gst-libav' 'yt-dlp' 'python-mutagen' 'ffmpeg' 'deno' 'hicolor-icon-theme')
-optdepends=('pavucontrol: choose which speakers or headphones Aurora plays on')
+depends=('gtk3' 'nss' 'alsa-lib' 'yt-dlp' 'python-mutagen' 'ffmpeg' 'deno' 'hicolor-icon-theme')
 provides=('aurora-player')
 conflicts=('aurora-player')
 options=('!strip' '!debug')
@@ -23,5 +24,10 @@ sha256sums=('@DEB_SHA256@'
 package() {
   # makepkg already unpacked the .deb into data.tar.* and control.tar.*
   bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+  rm -rf "${pkgdir}/usr/share/doc"
+  # Arch's kernel sandboxes Chromium without a setuid helper.
+  chmod 755 "${pkgdir}/opt/Aurora/chrome-sandbox"
+  install -dm755 "${pkgdir}/usr/bin"
+  ln -s /opt/Aurora/aurora "${pkgdir}/usr/bin/aurora"
   install -Dm644 "${srcdir}/LICENSE-v${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

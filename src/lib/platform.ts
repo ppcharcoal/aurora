@@ -4,6 +4,12 @@ export const isAndroid = typeof navigator !== "undefined" && /Android/i.test(nav
 /** True in the Linux desktop app (WebKitGTK). */
 export const isLinux = !isAndroid && typeof navigator !== "undefined" && /Linux/i.test(navigator.userAgent);
 
+/** True in the Electron build (Aurora's Linux app since 0.4). */
+export const isElectron = typeof navigator !== "undefined" && /Electron/i.test(navigator.userAgent);
+
+/** Linux with WebKitGTK: the system's sound settings choose the output device. */
+export const systemPicksOutput = isLinux && !isElectron;
+
 /** True in the Windows desktop app. */
 export const isWindows = !isAndroid && !isLinux;
 

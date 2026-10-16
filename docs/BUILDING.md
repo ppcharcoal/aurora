@@ -31,29 +31,33 @@ npm run app:build    # build the installer (what Build installer.cmd does)
 
 ## Build on Linux
 
-Install the build tools and libraries once. Arch:
+Since 0.4 the Linux app is **Electron**: WebKitGTK (what Tauri uses on Linux) lagged badly on NVIDIA with Wayland. Two parts:
+
+- **`aurora-core`**: all of Aurora's Rust code, built without a window (`--features core`, see `src-tauri/src/core.rs`). It runs every Tauri command exactly as the Tauri app does, on Tauri's window-less runtime, and serves songs and pictures to the window over a private `127.0.0.1` server (`media_server.rs`).
+- **`electron/`**: opens the window, starts `aurora-core` and passes calls between them (`main.cjs`, `preload.cjs`). The Svelte app is built with `vite build --mode electron`, which swaps the `@tauri-apps/*` packages for the small shims in `electron/shims/`. The app code itself is the same as on Windows and Android.
+
+Install the build tools once. Arch:
 
 ```sh
-sudo pacman -S --needed base-devel nodejs npm rust webkit2gtk-4.1 gtk3 libsoup3 librsvg \
-  gst-plugins-base gst-plugins-good gst-libav yt-dlp python-mutagen ffmpeg deno
+sudo pacman -S --needed base-devel nodejs npm rust webkit2gtk-4.1 gtk3 yt-dlp python-mutagen ffmpeg deno
 ```
 
-Debian/Ubuntu: `sudo apt install build-essential curl libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev gstreamer1.0-plugins-good gstreamer1.0-libav ffmpeg` plus Rust from https://rustup.rs and Node.js 20+.
+(`webkit2gtk-4.1` is only needed to compile; the app doesn't use it.) Debian/Ubuntu: `sudo apt install build-essential curl libwebkit2gtk-4.1-dev libgtk-3-dev libssl-dev ffmpeg` plus Rust from https://rustup.rs and Node.js 20+.
 
 Then, in this folder:
 
 ```sh
 npm install
-npm run app:dev                              # run with hot reload
-npx tauri build --bundles deb,appimage       # packages in src-tauri/target/release/bundle/
-node scripts/arch-pkgbuild.mjs 0.3.0 src-tauri/target/release/bundle/deb/*.deb PKGBUILD   # Arch package recipe
+npm --prefix electron install
+npm run linux:start      # build aurora-core and the interface, then run it
+npm run linux:build      # AppImage and .deb in electron/dist/
+node scripts/arch-pkgbuild.mjs 0.4.0 electron/dist/*.deb PKGBUILD   # Arch package recipe
 ```
 
 Notes:
-- Playback goes through WebKitGTK's GStreamer backend, so `gst-plugins-good` (MP3, FLAC…) and `gst-libav` (AAC/M4A) must be installed.
 - The download tools come from the package manager (Aurora's automatic installer is Windows-only).
-- Audio output devices can't be picked from inside WebKitGTK; the system's sound settings decide.
-- `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically (about 10× less CPU while playing; `AURORA_DMABUF=1` keeps the renderer). See `linux_display_fixes` in `src-tauri/src/lib.rs`.
+- `AURORA_GPU=0 aurora` draws without the graphics card; `AURORA_CORE=/path/to/aurora-core` runs a different helper build.
+- The old Tauri Linux build still works (`npm run app:dev`), but isn't released any more.
 
 ## Build the Android app
 
@@ -126,7 +130,7 @@ git tag v0.2.1
 git push origin main v0.2.1
 ```
 
-3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe`, `Aurora-v0.2.1-linux-x86_64.AppImage`, `Aurora-v0.2.1-linux-amd64.deb`, `PKGBUILD` and `Aurora-v0.2.1-android.apk`. Each release becomes the "latest" one, which the download links in the README always point to.
+3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe`, `Aurora-v0.2.1-linux-x86_64.AppImage` (Electron), `Aurora-v0.2.1-linux-amd64.deb`, `PKGBUILD` and `Aurora-v0.2.1-android.apk`. Each release becomes the "latest" one, which the download links in the README always point to.
 
 You can also start a build without a tag: **Actions → Release → Run workflow**, and type a tag name.
 
@@ -191,6 +195,8 @@ src-tauri/src/
   storage.rs                 verified cover-art slimming (has tests)
   mp4fix.rs                  M4A repair: rebuilds fragmented files, fixes audio offsets broken by tagging
   store.rs                   JSON settings storage
+  media_server.rs            Linux: serves songs and pictures to the window on 127.0.0.1
+  core.rs                    Linux: aurora-core, the window-less helper behind the Electron app
   yt_android.rs              phone versions of the download commands
 src-tauri/aurora-mobile/     the Android side (a Tauri plugin)
   src/lib.rs                 Rust API the app calls on Android
@@ -199,9 +205,11 @@ src-tauri/aurora-mobile/     the Android side (a Tauri plugin)
   android/…/Extractor.kt     YouTube/SoundCloud search and download (NewPipe Extractor)
   android/…/Outputs.kt       audio output devices
   android/…/PlayLog.kt       listening done while the app is closed, for stats and Last.fm
+electron/                    the Linux app: main.cjs (window, starts aurora-core), preload.cjs, shims/ for @tauri-apps
+packaging/arch/PKGBUILD.in   Arch package recipe (filled in by scripts/arch-pkgbuild.mjs)
 scripts/android-setup.mjs    adds JitPack + desugaring + the app icon to the generated Android project
 scripts/android-icons.py     builds the Android launcher icons from src-tauri/icons/icon.png
-.github/workflows/release.yml builds both apps on GitHub and publishes them as a Release
+.github/workflows/release.yml builds all three apps on GitHub and publishes them as a Release
 ```
 
 ## Ideas for next steps

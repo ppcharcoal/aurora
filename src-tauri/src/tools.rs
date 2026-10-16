@@ -10,7 +10,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use crate::rt::AppHandle;
+use tauri::{Emitter};
 
 use crate::store::data_dir;
 

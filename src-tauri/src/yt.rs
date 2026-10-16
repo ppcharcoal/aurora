@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 #[cfg(not(aurora_android))]
-use tauri::{AppHandle, Emitter, Manager, State};
+use crate::rt::AppHandle;
+use tauri::{Emitter, Manager, State};
 #[cfg(not(aurora_android))]
 use tokio::io::{AsyncBufReadExt, BufReader};
 

@@ -1,0 +1,74 @@
+{
+  "name": "aurora",
+  "productName": "Aurora",
+  "version": "0.4.0",
+  "description": "Aurora music player",
+  "homepage": "https://github.com/ppcharcoal/aurora",
+  "author": "ppcharcoal <341017455+ppcharcoal@users.noreply.github.com>",
+  "license": "MIT",
+  "private": true,
+  "main": "main.cjs",
+  "desktopName": "aurora.desktop",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --linux --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.5.1",
+    "electron-builder": "26.16.1"
+  },
+  "build": {
+    "appId": "app.aurora.player",
+    "productName": "Aurora",
+    "executableName": "aurora",
+    "artifactName": "Aurora-${version}-linux-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "icon.png",
+      "app/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../src-tauri/target/release/aurora-core",
+        "to": "aurora-core"
+      }
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "en-US"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo;Audio;Player",
+      "icon": "../src-tauri/icons/icon.png",
+      "maintainer": "ppcharcoal",
+      "synopsis": "Aurora music player",
+      "desktop": {
+        "entry": {
+          "Name": "Aurora",
+          "Comment": "Music player for your own library",
+          "StartupWMClass": "aurora",
+          "Keywords": "music;player;audio;"
+        }
+      }
+    },
+    "deb": {
+      "depends": [
+        "ffmpeg",
+        "libgtk-3-0",
+        "libnss3",
+        "libxss1",
+        "libasound2 | libasound2t64"
+      ]
+    },
+    "publish": null
+  }
+}

@@ -9,3 +9,4 @@ lastfm-key.json
 src-tauri/aurora-release.jks
 *.jks
 keystore.properties
+electron/app

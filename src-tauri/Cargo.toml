@@ -1,6 +1,6 @@
 [package]
 name = "aurora"
-version = "0.3.3"
+version = "0.4.0"
 description = "Aurora music player"
 edition = "2021"
 rust-version = "1.80"
@@ -13,12 +13,18 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [features]
+default = ["ui"]
+# The normal app: Tauri with the system web view (Windows, Android, and the old Linux build).
+ui = ["tauri/wry", "tauri/compression", "tauri/common-controls-v6", "tauri/dynamic-acl", "tauri/x11", "tauri/dbus"]
+# `aurora-core`: the same Rust code without a window, driven by the Electron
+# app on Linux. Build with `cargo build --release --bin aurora-core --no-default-features --features core`.
+core = ["tauri/test"]
 # Type-check the Android code paths on a PC (`cargo check --features simulate-android`). Never ship with it.
 simulate-android = []
 
 [dependencies]
 tauri-plugin-aurora-mobile = { path = "aurora-mobile" }
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", default-features = false, features = ["protocol-asset"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
@@ -35,6 +41,16 @@ rand = "0.8"
 url = "2"
 md5 = "0.7"
 fs2 = "0.4"
+
+[[bin]]
+name = "aurora"
+path = "src/main.rs"
+required-features = ["ui"]
+
+[[bin]]
+name = "aurora-core"
+path = "src/bin/aurora-core.rs"
+required-features = ["core"]
 
 [profile.dev]
 incremental = true

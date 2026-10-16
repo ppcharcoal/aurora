@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { iconFor, output } from "../output.svelte";
-  import { isAndroid, isLinux } from "../platform";
+  import { isAndroid, isLinux, systemPicksOutput } from "../platform";
   import { settings } from "../settings.svelte";
   import Icon from "./Icon.svelte";
 
@@ -11,7 +11,7 @@
   const chosen = $derived(settings.value.audioOutput?.id ?? null);
 </script>
 
-{#if isLinux}
+{#if systemPicksOutput}
   <div class="access">
     <p>
       On Linux, Aurora plays through your system's sound output. To send it to other speakers or headphones, use your desktop's sound
@@ -23,7 +23,7 @@
   <li>
     <button role="radio" aria-checked={!chosen} class:on={!chosen} onclick={() => output.select(null)}>
       <Icon name="output" size={18} />
-      <span class="name">System default<small>{isAndroid ? "Whatever Android picks (Bluetooth when connected)" : "Follows Windows' sound setting"}</small></span>
+      <span class="name">System default<small>{isAndroid ? "Whatever Android picks (Bluetooth when connected)" : isLinux ? "Follows your system's sound setting" : "Follows Windows' sound setting"}</small></span>
       {#if !chosen}<Icon name="check" size={16} stroke={2.4} />{/if}
     </button>
   </li>

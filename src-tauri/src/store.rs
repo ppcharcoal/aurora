@@ -5,7 +5,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tauri::{AppHandle, Manager};
+use crate::rt::AppHandle;
+use tauri::{Manager};
 
 pub fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
