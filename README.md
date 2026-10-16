@@ -62,7 +62,7 @@ windowrulev2 = float, class:^(aurora|Aurora|app\.aurora\.player)$   # optional: 
 
 `hyprctl clients` shows Aurora's exact window class while it's open. If `playerctl -l` lists Aurora, your media keys can control it with the usual `playerctl play-pause` binds.
 
-On NVIDIA, Aurora turns off WebKitGTK's DMA-BUF renderer by itself (it otherwise shows a blank window). If the window is still blank, start it with `WEBKIT_DISABLE_COMPOSITING_MODE=1 aurora`.
+Aurora turns off WebKitGTK's DMA-BUF renderer by itself: with it, playback used far more CPU (lag, stuttering music) and NVIDIA could show a blank window. To try it anyway, start Aurora with `AURORA_DMABUF=1 aurora`. If the window is blank, start it with `WEBKIT_DISABLE_COMPOSITING_MODE=1 aurora`.
 
 **Other distributions**: use the `.deb` (Debian, Ubuntu, Mint: `sudo apt install ./Aurora-…-linux-amd64.deb`) or the `.AppImage` (`chmod +x Aurora-…-linux-x86_64.AppImage`, then run it). Also install **yt-dlp**, **FFmpeg** and **Deno** (or Node.js) from your package manager; Aurora tells you if one is missing.
 

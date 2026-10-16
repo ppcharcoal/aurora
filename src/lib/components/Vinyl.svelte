@@ -29,6 +29,10 @@
     box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
     animation: spin 1.8s linear infinite;
     animation-play-state: paused;
+    /* Its own layer: turning it only moves pixels instead of redrawing the
+       grooves every frame (a big saving on Linux / WebKitGTK). */
+    will-change: transform;
+    transform: translateZ(0);
   }
   /* Light catching the grooves. */
   .disc::after {

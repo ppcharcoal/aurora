@@ -53,7 +53,7 @@ Notes:
 - Playback goes through WebKitGTK's GStreamer backend, so `gst-plugins-good` (MP3, FLAC…) and `gst-libav` (AAC/M4A) must be installed.
 - The download tools come from the package manager (Aurora's automatic installer is Windows-only).
 - Audio output devices can't be picked from inside WebKitGTK; the system's sound settings decide.
-- On NVIDIA, `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically (see `linux_display_fixes` in `src-tauri/src/lib.rs`).
+- `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically (about 10× less CPU while playing; `AURORA_DMABUF=1` keeps the renderer). See `linux_display_fixes` in `src-tauri/src/lib.rs`.
 
 ## Build the Android app
 

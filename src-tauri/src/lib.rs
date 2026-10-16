@@ -104,12 +104,15 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
     ]
 }
 
-/// WebKitGTK draws a blank or flickering window on NVIDIA with Wayland
-/// compositors such as Hyprland unless its DMA-BUF renderer is turned off.
-/// Only done when the NVIDIA driver is loaded and the user hasn't chosen.
+/// WebKitGTK's DMA-BUF renderer makes Aurora redraw at full cost while music
+/// plays: measured ~150% CPU vs ~15% without it, enough to make the app lag
+/// and the music (decoded in the same process) stutter. On NVIDIA with
+/// Wayland compositors such as Hyprland it can also give a blank window.
+/// So it's off on Linux unless the user sets the variable themselves, or
+/// AURORA_DMABUF=1 to keep it.
 fn linux_display_fixes() {
     #[cfg(target_os = "linux")]
-    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && std::path::Path::new("/proc/driver/nvidia").exists() {
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && std::env::var_os("AURORA_DMABUF").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 }
