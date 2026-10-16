@@ -1,4 +1,5 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
+import { mediaSrc } from "./media";
 import { player } from "./player.svelte";
 import { settings } from "./settings.svelte";
 import { ui } from "./ui.svelte";
@@ -70,7 +71,7 @@ class Preview {
       const a = this.el();
       a.volume = Math.min(1, settings.value.volume ** 2);
       // Local clip (saved by yt_stream_url) or a direct stream.
-      a.src = url.startsWith("http") ? url : convertFileSrc(url);
+      a.src = url.startsWith("http") ? url : mediaSrc(url);
       await a.play();
     } catch (e) {
       if (mine !== this.seq) return;

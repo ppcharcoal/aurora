@@ -323,7 +323,7 @@
     </div>
     {#if isLinux}
       <p class="note">
-        On Linux these come from your package manager. On Arch: <code>sudo pacman -S yt-dlp ffmpeg deno</code>. If searches or downloads
+        On Linux these come from your package manager. On Arch: <code>sudo pacman -S yt-dlp python-mutagen ffmpeg deno</code>. If searches or downloads
         start failing, update yt-dlp (<code>sudo pacman -Syu</code>) — YouTube changes often and yt-dlp keeps up.
       </p>
     {:else}

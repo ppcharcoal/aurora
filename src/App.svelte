@@ -5,6 +5,7 @@
   import { downloads } from "./lib/downloads.svelte";
   import { player } from "./lib/player.svelte";
   import { loadPaths } from "./lib/paths";
+  import { initMedia } from "./lib/media";
   import { playlists } from "./lib/playlists.svelte";
   import { profiles } from "./lib/profiles.svelte";
   import { stats } from "./lib/stats.svelte";
@@ -87,7 +88,7 @@
   onMount(() => {
     (async () => {
       // The active profile decides which settings / playlists / stats to load.
-      await Promise.all([loadPaths(), profiles.load()]);
+      await Promise.all([loadPaths(), profiles.load(), initMedia()]);
       await settings.load();
       theme.init();
       // One part failing to load must not leave the whole app blank: report it and carry on.

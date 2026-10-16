@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { mediaSrc } from "../media";
 import { output } from "../output.svelte";
 import { spectrum } from "../spectrum";
 import type { Track } from "../types";
@@ -77,7 +77,7 @@ export class LocalEngine {
 
   async load(track: Track, autoplay: boolean) {
     cancelAnimationFrame(this.fadeRaf);
-    this.audio.src = convertFileSrc(track.path);
+    this.audio.src = mediaSrc(track.path);
     this.audio.volume = this.applied(this.volume);
     if (autoplay) await this.audio.play();
   }

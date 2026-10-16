@@ -3,6 +3,8 @@ mod catalog;
 mod lastfm;
 mod images;
 mod library;
+#[cfg(not(aurora_android))]
+mod media_server;
 mod mp4fix;
 mod storage;
 mod store;
@@ -25,6 +27,7 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
             library::library_rescan,
             library::library_import,
             library::library_remove_copies,
+            media_server::media_base,
             tools::tools_status,
             tools::tools_install,
             tools::tools_update,
@@ -130,6 +133,13 @@ pub fn run() {
             let state = library::LibraryState::load(&handle)?;
             app.manage(state);
             images::allow(&handle)?;
+            // Linux: songs reach the player over a private local web server
+            // (GStreamer can't read the asset:// scheme). See media_server.rs.
+            #[cfg(not(aurora_android))]
+            {
+                let base = if cfg!(target_os = "linux") { media_server::start(&handle).ok() } else { None };
+                app.manage(media_server::MediaBase(base));
+            }
             // Safety net: the page shows the window when it's ready; if that
             // never happens (a page error), show it anyway instead of staying invisible.
             if let Some(w) = tauri::Manager::get_webview_window(app, "main") {

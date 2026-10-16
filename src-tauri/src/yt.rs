@@ -170,6 +170,14 @@ fn error_from(stderr: &str) -> String {
         .to_string();
     if line.contains("Sign in to confirm") || line.contains("HTTP Error 403") {
         format!("{line} (tried {DOWNLOAD_ATTEMPTS} times). If this keeps happening, use Settings → Update yt-dlp.")
+    } else if line.contains("mutagen") {
+        // yt-dlp embeds covers into Opus/M4A with the mutagen Python module;
+        // Linux packages of yt-dlp often leave it optional.
+        if cfg!(target_os = "linux") {
+            "yt-dlp needs the mutagen module to add cover art. Install it (Arch: sudo pacman -S python-mutagen) and try again.".into()
+        } else {
+            "yt-dlp needs the mutagen module to add cover art (pip install mutagen), or use Settings → Update yt-dlp.".into()
+        }
     } else {
         line
     }

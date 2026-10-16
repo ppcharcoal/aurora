@@ -70,7 +70,7 @@ class Tools {
     if (!this.status?.canInstall) {
       ui.toast(
         isLinux
-          ? "Aurora needs yt-dlp, FFmpeg and Deno. On Arch: sudo pacman -S yt-dlp ffmpeg deno, then restart Aurora."
+          ? "Aurora needs yt-dlp, FFmpeg and Deno. On Arch: sudo pacman -S yt-dlp python-mutagen ffmpeg deno, then restart Aurora."
           : "Install yt-dlp, ffmpeg and deno, then restart Aurora.",
         "error",
         9000,

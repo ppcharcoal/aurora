@@ -35,7 +35,7 @@ Install the build tools and libraries once. Arch:
 
 ```sh
 sudo pacman -S --needed base-devel nodejs npm rust webkit2gtk-4.1 gtk3 libsoup3 librsvg \
-  gst-plugins-base gst-plugins-good gst-libav yt-dlp ffmpeg deno
+  gst-plugins-base gst-plugins-good gst-libav yt-dlp python-mutagen ffmpeg deno
 ```
 
 Debian/Ubuntu: `sudo apt install build-essential curl libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev gstreamer1.0-plugins-good gstreamer1.0-libav ffmpeg` plus Rust from https://rustup.rs and Node.js 20+.
