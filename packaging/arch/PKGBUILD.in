@@ -1,0 +1,27 @@
+# Maintainer: ppcharcoal
+#
+# Installs Aurora from the .deb on the GitHub release (built on GitHub, using
+# Arch's own WebKitGTK and GStreamer). Made by scripts/arch-pkgbuild.mjs for
+# every release; download it from the release page and run `makepkg -si`.
+pkgname=aurora-player-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc="Music player for your own library: find and download songs and albums, playlists, Last.fm and a visualizer"
+arch=('x86_64')
+url="https://github.com/ppcharcoal/aurora"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'gtk3' 'libsoup3' 'gst-plugins-base' 'gst-plugins-good' 'gst-libav' 'yt-dlp' 'ffmpeg' 'deno' 'hicolor-icon-theme')
+optdepends=('pavucontrol: choose which speakers or headphones Aurora plays on')
+provides=('aurora-player')
+conflicts=('aurora-player')
+options=('!strip' '!debug')
+source=("Aurora-v${pkgver}-linux-amd64.deb::https://github.com/ppcharcoal/aurora/releases/download/v${pkgver}/Aurora-v${pkgver}-linux-amd64.deb"
+        "LICENSE-v${pkgver}::https://raw.githubusercontent.com/ppcharcoal/aurora/v${pkgver}/LICENSE")
+sha256sums=('@DEB_SHA256@'
+            '@LICENSE_SHA256@')
+
+package() {
+  # makepkg already unpacked the .deb into data.tar.* and control.tar.*
+  bsdtar -xf "${srcdir}"/data.tar.* -C "${pkgdir}"
+  install -Dm644 "${srcdir}/LICENSE-v${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

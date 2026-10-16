@@ -58,7 +58,8 @@ export async function defaultMusicFolder(): Promise<string> {
 }
 
 /** "/storage/emulated/0/Download/Aurora" → "Download/Aurora" (how the Files app shows it). */
-export const prettyPath = (p: string) => p.replace(/^\/storage\/emulated\/\d+\//, "").replace(/^\/sdcard\//, "");
+export const prettyPath = (p: string) =>
+  p.replace(/^\/storage\/emulated\/\d+\//, "").replace(/^\/sdcard\//, "").replace(/^\/home\/[^/]+(?=\/|$)/, "~");
 
 /** The phone version's first default (inside Android/data, hard to find). */
 export const isOldPhoneDefault = (p: string) => /\/Android\/data\/[^/]+\/files\/Music\/Aurora\/?$/.test(p);

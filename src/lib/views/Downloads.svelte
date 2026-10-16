@@ -1,6 +1,6 @@
 <script lang="ts">
   import { prettyPath } from "../native";
-  import { isAndroid } from "../platform";
+  import { defaultFolderLabel, isAndroid } from "../platform";
   import { flip } from "svelte/animate";
   import { fly } from "svelte/transition";
   import { revealItemInDir, openPath } from "@tauri-apps/plugin-opener";
@@ -55,7 +55,7 @@
   {#if !downloads.items.length}
     <div class="empty">
       <h2>No downloads this session</h2>
-      <p>Search for a song, press Download, and follow its progress here. Finished songs go to {settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : isAndroid ? "Download/Aurora" : "Music\\Aurora"} and show up in your library.</p>
+      <p>Search for a song, press Download, and follow its progress here. Finished songs go to {settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : defaultFolderLabel} and show up in your library.</p>
       <button class="btn primary" onclick={() => ui.go({ name: "search" })}><Icon name="search" size={16} /> Search YouTube</button>
     </div>
   {/if}

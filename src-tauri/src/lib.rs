@@ -102,7 +102,18 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// WebKitGTK draws a blank or flickering window on NVIDIA with Wayland
+/// compositors such as Hyprland unless its DMA-BUF renderer is turned off.
+/// Only done when the NVIDIA driver is loaded and the user hasn't chosen.
+fn linux_display_fixes() {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() && std::path::Path::new("/proc/driver/nvidia").exists() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
 pub fn run() {
+    linux_display_fixes();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -119,6 +130,22 @@ pub fn run() {
             let state = library::LibraryState::load(&handle)?;
             app.manage(state);
             images::allow(&handle)?;
+            // Safety net: the page shows the window when it's ready; if that
+            // never happens (a page error), show it anyway instead of staying invisible.
+            if let Some(w) = tauri::Manager::get_webview_window(app, "main") {
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(4));
+                    if !w.is_visible().unwrap_or(true) {
+                        let _ = w.show();
+                    }
+                });
+            }
+            // Tiling window managers (Hyprland, Sway…) may give Aurora a narrow
+            // tile: allow it, the layout switches to the compact phone one.
+            #[cfg(target_os = "linux")]
+            if let Some(w) = tauri::Manager::get_webview_window(app, "main") {
+                let _ = w.set_min_size(Some(tauri::LogicalSize::new(360.0, 480.0)));
+            }
             // Preview clips (see yt::yt_stream_url) are played from here.
             if let Ok(dir) = store::data_dir(&handle).map(|d| d.join("previews")) {
                 let _ = std::fs::create_dir_all(&dir);

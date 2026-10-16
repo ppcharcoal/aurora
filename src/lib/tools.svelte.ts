@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { isLinux } from "./platform";
 import { ui } from "./ui.svelte";
 
 export interface ToolsStatus {
@@ -67,7 +68,13 @@ class Tools {
     if (!this.status) await this.check();
     if (this.status?.ready) return true;
     if (!this.status?.canInstall) {
-      ui.toast("Install yt-dlp, ffmpeg and deno, then restart Aurora.", "error");
+      ui.toast(
+        isLinux
+          ? "Aurora needs yt-dlp, FFmpeg and Deno. On Arch: sudo pacman -S yt-dlp ffmpeg deno, then restart Aurora."
+          : "Install yt-dlp, ffmpeg and deno, then restart Aurora.",
+        "error",
+        9000,
+      );
       return false;
     }
     await this.install();

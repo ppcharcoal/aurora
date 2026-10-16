@@ -13,7 +13,7 @@
   import DataLimit from "../components/DataLimit.svelte";
   import Icon from "../components/Icon.svelte";
   import Vinyl from "../components/Vinyl.svelte";
-  import { isAndroid } from "../platform";
+  import { defaultFolderLabel, isAndroid, systemThemeLabel } from "../platform";
 
   // First-time setup: every step can be skipped, and so can the whole thing.
   const steps = ["welcome", "look", "lastfm", "storage", "done"] as const;
@@ -57,7 +57,7 @@
   const modes: { v: Settings["theme"]; label: string }[] = [
     { v: "dark", label: "Dark" },
     { v: "light", label: "Light" },
-    { v: "system", label: isAndroid ? "Match phone" : "Match Windows" },
+    { v: "system", label: systemThemeLabel },
   ];
   const backgrounds: { v: Settings["background"]; label: string; note: string }[] = [
     { v: "cover", label: "Cover art", note: "Blurred art of what's playing" },
@@ -203,7 +203,7 @@
                 <span class="lbl">Save songs to</span>
                 <button class="folder" onclick={chooseFolder} title="Change" disabled={isAndroid}>
                   <Icon name="folder" size={16} />
-                  <span>{settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : isAndroid ? "Download/Aurora" : "Music\\Aurora"}</span>
+                  <span>{settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : defaultFolderLabel}</span>
                   {#if !isAndroid}<small>Change</small>{/if}
                 </button>
               </div>

@@ -103,8 +103,12 @@
         ui.error(e);
       }
       ready = true;
-      // Show the window only once the first frame is ready (no white flash).
-      requestAnimationFrame(() => getCurrentWindow().show().catch(() => {}));
+      // Show the window once the first frame is ready (no white flash). Linux
+      // (WebKitGTK) runs no animation frames while the window is hidden, so a
+      // short timer shows it there too.
+      const show = () => getCurrentWindow().show().catch(() => {});
+      requestAnimationFrame(show);
+      setTimeout(show, 120);
     })();
 
     const keys = (e: KeyboardEvent) => {

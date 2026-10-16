@@ -29,6 +29,32 @@ npm run app:dev      # run with hot reload (with a console, for debugging)
 npm run app:build    # build the installer (what Build installer.cmd does)
 ```
 
+## Build on Linux
+
+Install the build tools and libraries once. Arch:
+
+```sh
+sudo pacman -S --needed base-devel nodejs npm rust webkit2gtk-4.1 gtk3 libsoup3 librsvg \
+  gst-plugins-base gst-plugins-good gst-libav yt-dlp ffmpeg deno
+```
+
+Debian/Ubuntu: `sudo apt install build-essential curl libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libssl-dev gstreamer1.0-plugins-good gstreamer1.0-libav ffmpeg` plus Rust from https://rustup.rs and Node.js 20+.
+
+Then, in this folder:
+
+```sh
+npm install
+npm run app:dev                              # run with hot reload
+npx tauri build --bundles deb,appimage       # packages in src-tauri/target/release/bundle/
+node scripts/arch-pkgbuild.mjs 0.3.0 src-tauri/target/release/bundle/deb/*.deb PKGBUILD   # Arch package recipe
+```
+
+Notes:
+- Playback goes through WebKitGTK's GStreamer backend, so `gst-plugins-good` (MP3, FLAC…) and `gst-libav` (AAC/M4A) must be installed.
+- The download tools come from the package manager (Aurora's automatic installer is Windows-only).
+- Audio output devices can't be picked from inside WebKitGTK; the system's sound settings decide.
+- On NVIDIA, `WEBKIT_DISABLE_DMABUF_RENDERER=1` is set automatically (see `linux_display_fixes` in `src-tauri/src/lib.rs`).
+
 ## Build the Android app
 
 You need, once, on your PC:
@@ -100,7 +126,7 @@ git tag v0.2.1
 git push origin main v0.2.1
 ```
 
-3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe` and `Aurora-v0.2.1-android.apk`. Each release becomes the "latest" one, which the download links in the README always point to.
+3. Watch it under the repository's **Actions** tab (about 15–25 minutes; the first run is the slowest). When both jobs are green, **Releases** has `Aurora-v0.2.1-windows-setup.exe`, `Aurora-v0.2.1-linux-x86_64.AppImage`, `Aurora-v0.2.1-linux-amd64.deb`, `PKGBUILD` and `Aurora-v0.2.1-android.apk`. Each release becomes the "latest" one, which the download links in the README always point to.
 
 You can also start a build without a tag: **Actions → Release → Run workflow**, and type a tag name.
 

@@ -1,6 +1,6 @@
 # Aurora
 
-**A music player for your own library, on Windows and Android.** Find any song or album, download it with proper tags and cover art, and play it in a clean, modern player with playlists, listening stats and Last.fm scrobbling. On your phone it plays in the background, from the lock screen and in the car with Android Auto.
+**A music player for your own library, on Windows, Linux and Android.** Find any song or album, download it with proper tags and cover art, and play it in a clean, modern player with playlists, listening stats and Last.fm scrobbling. On your phone it plays in the background, from the lock screen and in the car with Android Auto.
 
 **[⬇ Download the latest version](https://github.com/ppcharcoal/aurora/releases/latest)**
 
@@ -40,6 +40,33 @@
 1. Download `Aurora-…-windows-setup.exe` from the [latest release](https://github.com/ppcharcoal/aurora/releases/latest) and run it.
 2. If Windows shows **"Windows protected your PC"**, click **More info → Run anyway**. The installer isn't signed with a paid certificate, so Windows doesn't recognise it yet.
 3. Aurora installs for your user only (no admin rights needed) and appears in the Start menu. The first time you search, it offers to download the tools it needs (yt-dlp and FFmpeg, about 150 MB).
+
+### Linux
+
+**Arch Linux (and Manjaro, EndeavourOS…)**: install it as a normal package with the `PKGBUILD` from the release. It pulls in everything Aurora needs (WebKitGTK, GStreamer codecs, yt-dlp, FFmpeg and Deno):
+
+```sh
+mkdir -p ~/aurora-pkg && cd ~/aurora-pkg
+curl -LO https://github.com/ppcharcoal/aurora/releases/latest/download/PKGBUILD
+makepkg -si
+```
+
+Then start **Aurora** from your app launcher (wofi, rofi, fuzzel…) or run `aurora`. To update, run the same three commands again; to remove it, `sudo pacman -R aurora-player-bin`.
+
+**Hyprland**: Aurora works as a normal tiled window and switches to its compact layout in narrow tiles. A few optional lines for `~/.config/hypr/hyprland.conf`:
+
+```ini
+bind = $mainMod, M, exec, aurora                                    # open Aurora with Super+M
+windowrulev2 = float, class:^(aurora|Aurora|app\.aurora\.player)$   # optional: float it instead of tiling
+```
+
+`hyprctl clients` shows Aurora's exact window class while it's open. If `playerctl -l` lists Aurora, your media keys can control it with the usual `playerctl play-pause` binds.
+
+On NVIDIA, Aurora turns off WebKitGTK's DMA-BUF renderer by itself (it otherwise shows a blank window). If the window is still blank, start it with `WEBKIT_DISABLE_COMPOSITING_MODE=1 aurora`.
+
+**Other distributions**: use the `.deb` (Debian, Ubuntu, Mint: `sudo apt install ./Aurora-…-linux-amd64.deb`) or the `.AppImage` (`chmod +x Aurora-…-linux-x86_64.AppImage`, then run it). Also install **yt-dlp**, **FFmpeg** and **Deno** (or Node.js) from your package manager; Aurora tells you if one is missing.
+
+Audio output: Aurora plays through your system's default output. To send it elsewhere, use your desktop's sound menu or **pavucontrol** → Playback.
 
 ### Android 7 or newer
 

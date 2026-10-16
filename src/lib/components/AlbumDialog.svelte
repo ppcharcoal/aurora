@@ -1,6 +1,6 @@
 <script lang="ts">
   import { prettyPath } from "../native";
-  import { isAndroid } from "../platform";
+  import { defaultFolderLabel, isAndroid, sep } from "../platform";
   import { onDestroy } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { downloads } from "../downloads.svelte";
@@ -95,7 +95,7 @@
       </li>
     {/each}
   </ol>
-  <p class="note muted">Saved to {settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : isAndroid ? "Download/Aurora" : "Music\\Aurora"}{isAndroid ? "/" : "\\"}{album.artist} - {album.title}, tagged with album, track numbers and cover.</p>
+  <p class="note muted">Saved to {settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : defaultFolderLabel}{sep}{album.artist} - {album.title}, tagged with album, track numbers and cover.</p>
 </div>
 
 <style>

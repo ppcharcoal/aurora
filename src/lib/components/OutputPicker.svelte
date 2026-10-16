@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { iconFor, output } from "../output.svelte";
-  import { isAndroid } from "../platform";
+  import { isAndroid, isLinux } from "../platform";
   import { settings } from "../settings.svelte";
   import Icon from "./Icon.svelte";
 
@@ -11,6 +11,14 @@
   const chosen = $derived(settings.value.audioOutput?.id ?? null);
 </script>
 
+{#if isLinux}
+  <div class="access">
+    <p>
+      On Linux, Aurora plays through your system's sound output. To send it to other speakers or headphones, use your desktop's sound
+      menu, or <b>pavucontrol</b> → Playback → Aurora (works with PipeWire and PulseAudio).
+    </p>
+  </div>
+{:else}
 <ul class="outs" role="radiogroup" aria-label="Audio output">
   <li>
     <button role="radio" aria-checked={!chosen} class:on={!chosen} onclick={() => output.select(null)}>
@@ -39,7 +47,9 @@
   {/if}
 </ul>
 
-{#if output.needsAccess && !isAndroid}
+{/if}
+
+{#if output.needsAccess && !isAndroid && !isLinux}
   <div class="access">
     <p>Windows shows Aurora the names of your speakers and headphones after a quick, one-time check that briefly touches the microphone. Nothing is recorded.</p>
     <button class="btn" onclick={() => output.refresh(true)} disabled={output.busy}><Icon name="refresh" size={15} /> Show my devices</button>

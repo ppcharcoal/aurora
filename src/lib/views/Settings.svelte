@@ -9,7 +9,7 @@
   import { settings, type Quality } from "../settings.svelte";
   import { library } from "../sources/local.svelte";
   import { player } from "../player.svelte";
-  import { isAndroid } from "../platform";
+  import { defaultFolderLabel, isAndroid, isLinux, systemThemeLabel } from "../platform";
   import { theme } from "../theme.svelte";
   import { tools } from "../tools.svelte";
   import { ui } from "../ui.svelte";
@@ -204,7 +204,7 @@
     });
     if (typeof musicDest !== "string") return;
     const ok = await ask(
-      `Restore this backup?\n\nMusic is copied into ${musicDest}. Profiles from the backup are added to this PC (a profile that already exists here is replaced by the backup's version). Aurora restarts when it's done.`,
+      `Restore this backup?\n\nMusic is copied into ${musicDest}. Profiles from the backup are added here (a profile that already exists here is replaced by the backup's version). Aurora restarts when it's done.`,
       { title: "Restore backup", kind: "info", okLabel: "Restore" },
     );
     if (!ok) return;
@@ -242,7 +242,7 @@
     <header><Icon name="download" size={20} /><h2>Downloads</h2></header>
     <span class="lbl">Save songs to</span>
     <div class="pathrow">
-      <span class="path" title={settings.value.downloadFolder}>{settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : isAndroid ? "Download/Aurora (set on first download)" : "Music\\Aurora (chosen on first download)"}</span>
+      <span class="path" title={settings.value.downloadFolder}>{settings.value.downloadFolder ? prettyPath(settings.value.downloadFolder) : `${defaultFolderLabel} (${isAndroid ? "set" : "chosen"} on first download)`}</span>
       {#if !isAndroid}<button class="btn" onclick={chooseDownloadFolder}><Icon name="folder" size={15} /> Change</button>{/if}
     </div>
 
@@ -298,16 +298,25 @@
       <div class="rail"><div class="fill" style:transform={`scaleX(${(pct ?? 5) / 100})`}></div></div>
     {/if}
     <div class="row">
-      {#if !tools.status?.ready}
+      {#if !tools.status?.ready && !isLinux}
         <button class="btn primary" onclick={() => tools.install()} disabled={tools.installing || !tools.status?.canInstall}>
           {tools.installing ? "Installing…" : "Install"}
         </button>
       {/if}
+      {#if !isLinux}
       <button class="btn" onclick={() => tools.update()} disabled={!tools.status?.ytdlp || tools.updating || tools.installing}>
         <Icon name="refresh" size={15} /> {tools.updating ? "Updating…" : "Update yt-dlp"}
       </button>
+      {/if}
     </div>
+    {#if isLinux}
+      <p class="note">
+        On Linux these come from your package manager. On Arch: <code>sudo pacman -S yt-dlp ffmpeg deno</code>. If searches or downloads
+        start failing, update yt-dlp (<code>sudo pacman -Syu</code>) — YouTube changes often and yt-dlp keeps up.
+      </p>
+    {:else}
     <p class="note">If searches or downloads start failing, update yt-dlp first — YouTube changes often and yt-dlp keeps up.</p>
+    {/if}
   </section>
   {/if}
 
@@ -414,7 +423,7 @@
     <header><Icon name="edit" size={20} /><h2>Appearance</h2></header>
     <span class="lbl">Mode</span>
     <div class="seg three" role="radiogroup" aria-label="Mode">
-      {#each [["dark", "Dark"], ["light", "Light"], ["system", isAndroid ? "Match phone" : "Match Windows"]] as [v, label]}
+      {#each [["dark", "Dark"], ["light", "Light"], ["system", systemThemeLabel]] as [v, label]}
         <button role="radio" aria-checked={settings.value.theme === v} class:on={settings.value.theme === v} onclick={() => settings.set("theme", v as "dark")}>
           <span class="swatch {v}"></span><strong>{label}</strong>
         </button>
