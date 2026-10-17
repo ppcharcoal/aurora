@@ -1,7 +1,7 @@
 //! Discord bot (Windows and Linux): runs Aurora's bot helper (discord/, a
 //! small Node program using discord.js) and passes messages between it and
-//! the window. The helper plays Aurora's songs in a voice channel; the
-//! window stays in charge of what plays (see src/lib/discord.svelte.ts).
+//! the window. While the bot is in a voice channel it is Aurora's audio
+//! output; the window stays in charge of what plays (src/lib/discord.svelte.ts).
 //!
 //! The bot token is the user's own (Discord Developer Portal). It's kept in
 //! `discord-bot.token` in Aurora's data folder: never shown again in full,
@@ -192,7 +192,7 @@ fn write_line(h: &mut Helper, msg: &Value) -> Result<(), String> {
 
 /// Starts the bot with the saved token. Messages from it arrive as `discord://event`.
 #[tauri::command]
-pub fn discord_start(app: AppHandle, state: tauri::State<'_, DiscordBot>, control: String, now_playing: bool) -> Result<(), String> {
+pub fn discord_start(app: AppHandle, state: tauri::State<'_, DiscordBot>, now_playing: bool) -> Result<(), String> {
     let token = read_token(&app).ok_or("Add your bot token first.")?;
     let mut slot = state.0.lock().map_err(|e| e.to_string())?;
     if let Some(mut old) = slot.take() {
@@ -238,7 +238,7 @@ pub fn discord_start(app: AppHandle, state: tauri::State<'_, DiscordBot>, contro
     let mut helper = Helper { child, stdin };
     write_line(
         &mut helper,
-        &serde_json::json!({ "t": "start", "token": token, "ffmpeg": ffmpeg_path(&app), "control": control, "nowPlaying": now_playing }),
+        &serde_json::json!({ "t": "start", "token": token, "ffmpeg": ffmpeg_path(&app), "nowPlaying": now_playing }),
     )?;
     *slot = Some(helper);
     Ok(())

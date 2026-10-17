@@ -5,32 +5,23 @@ import { discordHooks } from "./hooks";
 import { isAndroid } from "./platform";
 import { player } from "./player.svelte";
 import { settings } from "./settings.svelte";
-import { library } from "./sources/local.svelte";
 import { debouncedSaver, storeGet } from "./store";
-import type { Album, Track } from "./types";
-import { ui } from "./ui.svelte";
+import type { Track } from "./types";
 
 /**
  * Discord, on Windows and Linux:
  *  - the bot: plays what Aurora plays in a voice channel. Aurora's player stays
  *    in charge; the bot (src-tauri/src/discord.rs + discord/src/main.js)
- *    follows it, and commands typed in Discord are carried out here.
+ *    follows it. While it's in a voice channel it is the audio output: this
+ *    computer stays quiet and Aurora's volume slider sets the call's volume.
  *  - Rich Presence: "Listening to …" on your own profile (src-tauri/src/presence.rs).
  */
 
-export type Control = "voice" | "everyone" | "owner" | "none";
-
 export interface DiscordConfig {
-  /** Who may use /play, /skip… and the buttons in Discord. */
-  control: Control;
-  /** Post a now-playing card with buttons in the voice channel's chat. */
+  /** Post a now-playing card in the voice channel's chat. */
   nowPlaying: boolean;
-  /** Keep playing on this computer's speakers too (otherwise only in Discord). */
-  hearHere: boolean;
   /** Connect the bot when Aurora starts. */
   autoStart: boolean;
-  /** Volume in the call, 0–1.5 (1 = as the file is). */
-  volume: number;
   /** The last voice channel, to offer it again. */
   last: { guildId: string; channelId: string } | null;
   /** Rich Presence: show what you're listening to on your profile. */
@@ -40,11 +31,8 @@ export interface DiscordConfig {
 }
 
 const defaults: DiscordConfig = {
-  control: "voice",
   nowPlaying: true,
-  hearHere: true,
   autoStart: false,
-  volume: 1,
   last: null,
   presence: false,
   presenceAppId: "",
@@ -134,9 +122,14 @@ class Discord {
           this.send({ t: on ? "resume" : "pause", positionMs: Math.round(pos) });
         }
       });
-      // Speakers on this computer: muted while the music plays only in Discord.
+      // The bot is the audio output while it's in a channel: this computer stays quiet.
       $effect(() => {
-        player.setLocalMuted(this.live && !this.cfg.hearHere);
+        player.setLocalMuted(this.live);
+      });
+      // …and Aurora's volume slider sets the volume in the call.
+      $effect(() => {
+        const v = settings.value.volume;
+        if (untrack(() => this.live)) this.send({ t: "volume", volume: v }, true);
       });
       // Rich Presence follows the song and pause state.
       $effect(() => {
@@ -153,8 +146,7 @@ class Discord {
   set<K extends keyof DiscordConfig>(k: K, v: DiscordConfig[K]) {
     this.cfg[k] = v;
     this.save($state.snapshot(this.cfg));
-    if (k === "control" || k === "nowPlaying") this.send({ t: "settings", control: this.cfg.control, nowPlaying: this.cfg.nowPlaying }, true);
-    if (k === "volume") this.send({ t: "volume", volume: v }, true);
+    if (k === "nowPlaying") this.send({ t: "settings", nowPlaying: this.cfg.nowPlaying }, true);
   }
 
   async refreshToken() {
@@ -173,7 +165,7 @@ class Discord {
     this.error = "";
     this.status = "starting";
     try {
-      await invoke("discord_start", { control: this.cfg.control, nowPlaying: this.cfg.nowPlaying });
+      await invoke("discord_start", { nowPlaying: this.cfg.nowPlaying });
     } catch (e) {
       this.status = "off";
       this.error = String(e);
@@ -229,7 +221,7 @@ class Discord {
       durationMs: t.durationMs,
       cover: t.coverPath ?? null,
       color: c ? (c[0] << 16) | (c[1] << 8) | c[2] : null,
-      volume: this.cfg.volume,
+      volume: settings.value.volume,
     });
   }
 
@@ -272,110 +264,6 @@ class Discord {
       case "log":
         console.info("[discord]", m.message);
         break;
-      case "command":
-        this.command(Number(m.id), String(m.cmd), (m.args ?? {}) as Record<string, string>, m.user as { name: string } | null);
-        break;
-    }
-  }
-
-  /* ------------------------------------------------- Discord commands -- */
-
-  private reply(id: number, text: string, extra: Record<string, unknown> = {}) {
-    this.send({ t: "reply", id, text, ...extra }, true);
-  }
-
-  private find(query: string): { track?: Track; album?: Album } {
-    const q = query.trim();
-    if (q.startsWith("t:")) return { track: library.byId.get(q.slice(2)) };
-    if (q.startsWith("a:")) return { album: library.albums.find((a) => a.id === q.slice(2)) };
-    const hits = this.search(q);
-    return hits[0]?.value.startsWith("a:") ? { album: library.albums.find((a) => a.id === hits[0].value.slice(2)) } : { track: hits[0] ? library.byId.get(hits[0].value.slice(2)) : undefined };
-  }
-
-  /** Library search for /play: songs first, then albums. */
-  search(query: string): { name: string; value: string }[] {
-    const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-    const has = (s: string) => words.every((w) => s.includes(w));
-    const tracks = library.tracks;
-    if (!words.length) {
-      return player.recent.slice(0, 15).map((t) => ({ name: `${t.title} — ${t.artist}`, value: `t:${t.id}` }));
-    }
-    const songs: { name: string; value: string; score: number }[] = [];
-    for (const t of tracks) {
-      const title = t.title.toLowerCase();
-      const all = `${title} ${t.artist.toLowerCase()} ${(t.album ?? "").toLowerCase()}`;
-      if (!has(all)) continue;
-      const score = (has(title) ? 2 : 0) + (title.startsWith(words[0]) ? 1 : 0);
-      songs.push({ name: `${t.title} — ${t.artist}`, value: `t:${t.id}`, score });
-      if (songs.length > 400) break;
-    }
-    songs.sort((a, b) => b.score - a.score);
-    const albums = library.albums
-      .filter((a) => has(`${a.name} ${a.subtitle}`.toLowerCase()))
-      .slice(0, 5)
-      .map((a) => ({ name: `💿 ${a.name} — ${a.subtitle} (album)`, value: `a:${a.id}` }));
-    return [...songs.slice(0, 20).map(({ name, value }) => ({ name, value })), ...albums].slice(0, 25);
-  }
-
-  private command(id: number, cmd: string, args: Record<string, string>, user: { name: string } | null) {
-    const who = user?.name ?? "Someone";
-    const now = (t: Track | null) => (t ? `**${t.title}** — ${t.artist}` : "nothing");
-    switch (cmd) {
-      case "search":
-        return this.reply(id, "", { items: this.search(args.query ?? "") });
-      case "play":
-      case "add": {
-        const { track, album } = this.find(args.query ?? "");
-        if (!track && !album) return this.reply(id, `Nothing in the library matches “${args.query}”.`);
-        if (cmd === "play") {
-          if (album) player.playList(album.tracks, 0);
-          else if (track) {
-            player.playNext(track);
-            if (player.queue[player.index]?.key !== track.key) player.jumpTo(player.index + 1);
-          }
-          ui.toast(`${who} played ${album ? album.name : track!.title} from Discord`, "info", 3000);
-          return this.reply(id, album ? `▶️ Playing the album **${album.name}** (${album.tracks.length} songs)` : `▶️ Playing ${now(track!)}`);
-        }
-        for (const t of album ? album.tracks : [track!]) player.addToQueue(t, true);
-        ui.toast(`${who} added ${album ? album.name : track!.title} from Discord`, "info", 3000);
-        return this.reply(id, album ? `➕ Added the album **${album.name}** to the queue` : `➕ Added ${now(track!)} to the queue`);
-      }
-      case "pause":
-        if (player.playing) player.toggle();
-        return this.reply(id, "⏸️ Paused");
-      case "resume":
-        if (!player.playing) player.toggle();
-        return this.reply(id, "▶️ Playing");
-      case "toggle":
-        player.toggle();
-        return this.reply(id, "");
-      case "skip":
-        player.next();
-        return this.reply(id, `⏭️ Skipped. Up now: ${now(player.queue[player.index] ?? null)}`);
-      case "previous":
-        player.prev();
-        return this.reply(id, "⏮️ Back");
-      case "stop":
-        // The bot leaves; music carries on here only if you were listening here too.
-        if (!this.cfg.hearHere && player.playing) player.toggle();
-        return this.reply(id, "⏹️ Stopped");
-      case "np": {
-        const t = player.current;
-        if (!t) return this.reply(id, "Nothing is playing.");
-        const fmt = (ms: number) => `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
-        return this.reply(id, `${player.playing ? "▶️" : "⏸️"} ${now(t)}${t.album ? ` · ${t.album}` : ""}\n\`${fmt(player.position)} / ${fmt(player.duration)}\``);
-      }
-      case "queue": {
-        const next = player.upNext.slice(0, 10);
-        const rest = player.upNext.length - next.length;
-        return this.reply(
-          id,
-          `Now: ${now(player.current)}\n` +
-            (next.length ? next.map((t, i) => `${i + 1}. ${t.title} — ${t.artist}`).join("\n") + (rest > 0 ? `\n…and ${rest} more` : "") : "Nothing queued after this one."),
-        );
-      }
-      default:
-        return this.reply(id, "Aurora doesn't know that command yet.");
     }
   }
 

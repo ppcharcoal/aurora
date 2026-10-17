@@ -1,6 +1,6 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import { discord, PORTAL_URL, type Control } from "../discord.svelte";
+  import { discord, PORTAL_URL } from "../discord.svelte";
   import { player } from "../player.svelte";
   import { ui } from "../ui.svelte";
   import Icon from "../components/Icon.svelte";
@@ -37,27 +37,12 @@
     }
   }
 
-  const controls: { v: Control; label: string; hint: string }[] = [
-    { v: "voice", label: "Listeners", hint: "People in the bot's voice channel" },
-    { v: "everyone", label: "Everyone", hint: "Anyone in the server" },
-    { v: "owner", label: "Only me", hint: "The bot's owner (you)" },
-    { v: "none", label: "Nobody", hint: "Only from Aurora" },
-  ];
-
-  const commands = [
-    ["/play song", "play a song or album from your library (it suggests as you type)"],
-    ["/add song", "add it to the end of the queue"],
-    ["/pause · /resume", "pause or carry on"],
-    ["/skip · /previous", "next or previous song"],
-    ["/np · /queue", "what's playing and what's next (only the asker sees it)"],
-    ["/join · /leave", "bring the bot into your voice channel, or send it away"],
-  ];
 </script>
 
 <div class="page narrow">
   <h1 class="page-title">Discord</h1>
   <p class="lead">
-    Play your music in a Discord voice channel through your own bot, and control it from here (or from Discord). The bot runs inside Aurora on this
+    Play your music in a Discord voice channel through your own bot, controlled from here. The bot runs inside Aurora on this
     computer: it's online while Aurora is open, and plays songs straight from your files, so friends hear them clean.
   </p>
 
@@ -101,7 +86,7 @@
         </li>
         <li>
           <b>Add the bot to your server</b>: after connecting, click <i>Add to a server</i>, pick the server and click <b>Authorize</b>. You need the
-          <i>Manage Server</i> permission there (on your own server you have it). Then pick a voice channel below and press <b>Join</b>.
+          <i>Manage Server</i> permission there (on your own server you have it). Then pick a voice channel below and press <b>Join</b>, and play something in Aurora.
         </li>
       </ol>
       <div class="warn">
@@ -191,9 +176,9 @@
               <Icon name="check" size={15} />
               <span>
               {#if player.current}
-                Playing <b>{player.current.title}</b> in <b>{channelName?.name}</b>{player.playing ? "" : " (paused)"}. Use Aurora's player as usual: the bot follows it.
+                {player.playing ? "Playing" : "Paused:"} <b>{player.current.title}</b> in <b>{channelName?.name}</b>. Aurora's player controls it; this computer stays quiet.
               {:else}
-                In <b>{channelName?.name}</b>. Play something in Aurora and it plays there too.
+                In <b>{channelName?.name}</b>. Press play in Aurora and the music plays there.
               {/if}
               </span>
             </p>
@@ -205,30 +190,14 @@
     <!-- -------------------------------------------------------- options -->
     <section class="card">
       <header><Icon name="settings" size={20} /><h2>Playing in Discord</h2></header>
-      <span class="lbl">Where you hear it</span>
-      <div class="seg two">
-        <button class:on={discord.cfg.hearHere} onclick={() => discord.set("hearHere", true)}>Discord and this computer<small>You listen along on your speakers</small></button>
-        <button class:on={!discord.cfg.hearHere} onclick={() => discord.set("hearHere", false)}>Only in Discord<small>This computer stays quiet; join the call to listen</small></button>
-      </div>
-
-      <span class="lbl spaced">Volume in the call</span>
-      <div class="vol">
-        <input type="range" min="0" max="1.5" step="0.05" value={discord.cfg.volume} oninput={(e) => discord.set("volume", Number(e.currentTarget.value))} aria-label="Volume in Discord" />
-        <span>{Math.round(discord.cfg.volume * 100)}%</span>
-      </div>
-
-      <span class="lbl spaced">Who can control the music from Discord</span>
-      <div class="seg four">
-        {#each controls as c (c.v)}
-          <button class:on={discord.cfg.control === c.v} onclick={() => discord.set("control", c.v)}>{c.label}<small>{c.hint}</small></button>
-        {/each}
-      </div>
-
-      <div class="spacer"></div>
+      <p class="note first">
+        While the bot is in a voice channel it is Aurora's speaker: this computer stays quiet, and Aurora's play, pause, skip and volume control
+        the music in the call. Join the call to listen along. When the bot leaves, the music comes out of this computer again.
+      </p>
       <label class="toggle">
         <input type="checkbox" checked={discord.cfg.nowPlaying} onchange={(e) => discord.set("nowPlaying", e.currentTarget.checked)} />
         <span class="sw"></span>
-        <span>Post a “now playing” card with ⏮ ⏯ ⏭ ⏹ buttons in the voice channel's chat</span>
+        <span>Post a “now playing” card in the voice channel's chat when a song starts</span>
       </label>
       <label class="toggle">
         <input type="checkbox" checked={discord.cfg.autoStart} onchange={(e) => discord.set("autoStart", e.currentTarget.checked)} />
@@ -237,16 +206,6 @@
       </label>
     </section>
 
-    <section class="card">
-      <header><Icon name="queue" size={20} /><h2>Commands in Discord</h2></header>
-      <dl class="cmds">
-        {#each commands as [c, d] (c)}
-          <dt><code>{c}</code></dt>
-          <dd>{d}</dd>
-        {/each}
-      </dl>
-      <p class="note">Commands appear when you type <code>/</code> in any channel of a server the bot is in (give Discord a minute after adding the bot). /play searches your Aurora library, so friends can only pick songs you have.</p>
-    </section>
   {/if}
 
   <p class="foot">
@@ -505,65 +464,6 @@
     flex: none;
     align-self: center;
   }
-  .lbl {
-    display: block;
-    font-size: 13px;
-    color: var(--ink-2);
-    margin: 4px 0 8px;
-  }
-  .lbl.spaced {
-    margin-top: 22px;
-  }
-  .seg {
-    display: grid;
-    gap: 8px;
-  }
-  .seg.two {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .seg.four {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-  .seg button {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    text-align: left;
-    background: var(--well);
-    border: 1px solid var(--line);
-    transition:
-      border-color var(--t-fast),
-      background var(--t-fast);
-  }
-  .seg button.on {
-    border-color: var(--accent);
-    background: rgb(var(--accent-rgb) / 0.1);
-  }
-  .seg small {
-    color: var(--ink-3);
-    font-size: 12px;
-  }
-  .vol {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    max-width: 380px;
-  }
-  .vol input {
-    flex: 1;
-    accent-color: var(--accent);
-  }
-  .vol span {
-    width: 44px;
-    text-align: right;
-    color: var(--ink-2);
-    font-variant-numeric: tabular-nums;
-  }
-  .spacer {
-    height: 18px;
-  }
   .toggle {
     display: flex;
     align-items: center;
@@ -606,19 +506,6 @@
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
-  .cmds {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: 8px 16px;
-    margin: 0;
-  }
-  .cmds dt code {
-    color: var(--accent);
-  }
-  .cmds dd {
-    margin: 0;
-    color: var(--ink-2);
-  }
   .foot {
     font-size: 13px;
     color: var(--ink-3);
@@ -627,19 +514,8 @@
     padding: 18px 16px;
   }
   @media (max-width: 720px) {
-    .seg.two,
-    .seg.four {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .tokenrow {
       flex-wrap: wrap;
-    }
-    .cmds {
-      grid-template-columns: 1fr;
-      gap: 2px 0;
-    }
-    .cmds dd {
-      margin-bottom: 8px;
     }
   }
 </style>

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { discord } from "../discord.svelte";
   import { iconFor, output } from "../output.svelte";
   import { isAndroid, isLinux, systemPicksOutput } from "../platform";
   import { settings } from "../settings.svelte";
@@ -10,6 +11,12 @@
   });
   const chosen = $derived(settings.value.audioOutput?.id ?? null);
 </script>
+
+{#if discord.live}
+  <div class="access">
+    <p>Aurora is playing through your Discord bot right now, so this computer stays quiet. It plays here again when the bot leaves the voice channel (Discord page).</p>
+  </div>
+{/if}
 
 {#if systemPicksOutput}
   <div class="access">

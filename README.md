@@ -28,7 +28,7 @@
 - One-file **backup and restore**: music, profiles, playlists and stats, between PCs and phones in either direction.
 
 **Discord** (Windows and Linux)
-- **Your own music bot**: Aurora plays what you're listening to in a Discord voice channel through a bot you create (free, about 3 minutes). Control it from Aurora as usual, or from Discord with `/play`, `/skip`, `/queue`… and the buttons on its now-playing card. You choose who may control it.
+- **Your own music bot**: a bot you create (free, about 3 minutes) joins a voice channel and becomes Aurora's speaker there: play, pause, skip and volume in Aurora control the music in the call, and your computer stays quiet while the bot is in the channel.
 - **Discord status**: "Listening to" with the song, artist and time left on your profile (optional, in Settings).
 
 **On Android**
@@ -94,7 +94,7 @@ On Windows and Linux, open **Discord** in Aurora's menu (under Downloads). The p
 2. **New Application** → name it (e.g. *Aurora*, the name people see) → **Create**.
 3. **Bot** (left menu) → **Reset Token** → **Yes, do it!** → **Copy**. The three "Privileged Gateway Intents" switches can stay off.
 4. Paste the token into Aurora and click **Connect bot**.
-5. Click **Add to a server**, choose your server and **Authorize**. Then pick a voice channel in Aurora and press **Join**, or type `/join` in Discord while you're in a voice channel.
+5. Click **Add to a server**, choose your server and **Authorize**. Then pick a voice channel in Aurora, press **Join** and play something. The bot only makes sound while Aurora is playing, and Aurora's own speakers stay quiet until the bot leaves.
 
 The bot runs inside Aurora on your computer, so it's online while Aurora is open. Keep the token secret: it's like a password for the bot. Aurora stores it only on your computer and never puts it in backups; if it leaks, reset it in the portal and paste the new one.
 
