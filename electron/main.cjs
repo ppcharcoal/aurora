@@ -35,13 +35,23 @@ function corePath() {
   return path.join(__dirname, "..", "src-tauri", "target", "release", "aurora-core");
 }
 
+function discordHelper() {
+  if (process.env.AURORA_DISCORD_HELPER) return process.env.AURORA_DISCORD_HELPER;
+  if (app.isPackaged) return path.join(process.resourcesPath, "discord", "aurora-discord.cjs");
+  return path.join(__dirname, "..", "discord", "dist", "aurora-discord.cjs");
+}
+
 let core = null; // { socket, pending: Map, nextId }
 let coreProc = null;
 let win = null;
 
 function startCore() {
   return new Promise((resolve, reject) => {
-    const proc = spawn(corePath(), [], { stdio: ["ignore", "pipe", "inherit"] });
+    const proc = spawn(corePath(), [], {
+      stdio: ["ignore", "pipe", "inherit"],
+      // The Discord bot helper runs on Electron's own Node.js (see src-tauri/src/discord.rs).
+      env: { ...process.env, AURORA_NODE: process.execPath, AURORA_DISCORD_HELPER: discordHelper() },
+    });
     coreProc = proc;
     proc.on("error", reject);
     proc.on("exit", (code) => {

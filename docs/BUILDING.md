@@ -29,6 +29,8 @@ npm run app:dev      # run with hot reload (with a console, for debugging)
 npm run app:build    # build the installer (what Build installer.cmd does)
 ```
 
+Both also build the Discord bot helper (`discord/`, see `npm run discord:build`); the installer carries it, and it runs on Node.js or the Deno that Aurora installs with its download tools.
+
 ## Build on Linux
 
 Since 0.4 the Linux app is **Electron**: WebKitGTK (what Tauri uses on Linux) lagged badly on NVIDIA with Wayland. Two parts:
@@ -196,6 +198,8 @@ src-tauri/src/
   mp4fix.rs                  M4A repair: rebuilds fragmented files, fixes audio offsets broken by tagging
   store.rs                   JSON settings storage
   media_server.rs            Linux: serves songs and pictures to the window on 127.0.0.1
+  discord.rs                 starts the Discord bot helper, keeps the bot token, passes messages
+  presence.rs                Discord Rich Presence over the Discord app's local IPC socket
   core.rs                    Linux: aurora-core, the window-less helper behind the Electron app
   yt_android.rs              phone versions of the download commands
 src-tauri/aurora-mobile/     the Android side (a Tauri plugin)
@@ -205,6 +209,7 @@ src-tauri/aurora-mobile/     the Android side (a Tauri plugin)
   android/…/Extractor.kt     YouTube/SoundCloud search and download (NewPipe Extractor)
   android/…/Outputs.kt       audio output devices
   android/…/PlayLog.kt       listening done while the app is closed, for stats and Last.fm
+discord/                     the Discord bot helper (discord.js): src/main.js, bundled by build.mjs; run by src-tauri/src/discord.rs
 electron/                    the Linux app: main.cjs (window, starts aurora-core), preload.cjs, shims/ for @tauri-apps
 packaging/arch/PKGBUILD.in   Arch package recipe (filled in by scripts/arch-pkgbuild.mjs)
 scripts/android-setup.mjs    adds JitPack + desugaring + the app icon to the generated Android project

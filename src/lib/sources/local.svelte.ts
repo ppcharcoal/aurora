@@ -39,6 +39,7 @@ function toTrack(t: RawTrack): Track {
     durationMs: t.durationMs,
     size: t.size,
     art: t.cover ? convertFileSrc(t.cover) : undefined,
+    coverPath: t.cover ?? undefined,
     color: t.color ?? undefined,
   };
 }

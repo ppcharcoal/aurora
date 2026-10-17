@@ -3,7 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { join } from "@tauri-apps/api/path";
   import { ask, message, open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
-  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { onMount } from "svelte";
   import { flushSaves, pauseSaves } from "../store";
   import { settings, type Quality } from "../settings.svelte";
@@ -12,6 +12,7 @@
   import { defaultFolderLabel, isAndroid, isLinux, systemThemeLabel } from "../platform";
   import { theme } from "../theme.svelte";
   import { tools } from "../tools.svelte";
+  import { discord, PORTAL_URL } from "../discord.svelte";
   import { ui } from "../ui.svelte";
   import Icon from "../components/Icon.svelte";
   import DataLimit from "../components/DataLimit.svelte";
@@ -431,6 +432,40 @@
     {/if}
   </section>
 
+  {#if discord.supported}
+  <section class="card">
+    <header>
+      <Icon name="bot" size={20} /><h2>Discord status</h2>
+      <span class="state" class:on={discord.cfg.presence}>{discord.cfg.presence ? "On" : "Off"}</span>
+    </header>
+    <label class="toggle">
+      <input type="checkbox" checked={discord.cfg.presence} onchange={(e) => { discord.set("presence", e.currentTarget.checked); discord.refreshPresence(); }} />
+      <span class="sw"></span>
+      <span>Show what I'm listening to on my Discord profile</span>
+    </label>
+    <p class="note first">
+      Your friends see <i>Listening to</i> with the song, artist and time left, like with Spotify. It needs the Discord desktop app running on this computer,
+      and goes away when you pause or close Aurora.
+    </p>
+    {#if discord.cfg.presence}
+      <span class="lbl">Discord Application ID</span>
+      <div class="pathrow">
+        <input class="field appid" inputmode="numeric" placeholder={discord.token.appId ? `Your bot's: ${discord.token.appId}` : "e.g. 1234567890123456789"} value={discord.cfg.presenceAppId} onchange={(e) => { discord.set("presenceAppId", e.currentTarget.value.replace(/\D/g, "")); discord.refreshPresence(); }} aria-label="Discord Application ID" />
+      </div>
+      <p class="note first">
+        {#if discord.token.appId}
+          Leave it empty to use your Aurora bot's application (set up on the <button class="a" onclick={() => ui.go({ name: "discord" })}>Discord</button> page).
+        {:else}
+          Discord shows the status under an application of yours (it's free, no bot needed): in the
+          <button class="a" onclick={() => openUrl(PORTAL_URL)}>Developer Portal</button> click <b>New Application</b>, name it <i>Aurora</i>, then copy the
+          <b>Application ID</b> from <i>General Information</i> and paste it here. If you set up the Discord bot, its ID is used by itself.
+        {/if}
+      </p>
+      {#if discord.presenceError}<p class="note warnline">{discord.presenceError}</p>{/if}
+    {/if}
+  </section>
+  {/if}
+
   <section class="card">
     <header><Icon name="edit" size={20} /><h2>Appearance</h2></header>
     <span class="lbl">Mode</span>
@@ -733,6 +768,19 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .appid {
+    flex: 1;
+    max-width: 360px;
+  }
+  .warnline {
+    color: rgb(240 120 110);
+  }
+  .a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    font-size: inherit;
   }
   .toggle {
     display: flex;

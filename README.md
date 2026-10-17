@@ -27,6 +27,10 @@
 - **Last.fm**: scrobbling, "now playing", loved songs synced both ways, friends' listening, recommendations on Home, radio from any song, artist info, and downloading what you've played elsewhere.
 - One-file **backup and restore**: music, profiles, playlists and stats, between PCs and phones in either direction.
 
+**Discord** (Windows and Linux)
+- **Your own music bot**: Aurora plays what you're listening to in a Discord voice channel through a bot you create (free, about 3 minutes). Control it from Aurora as usual, or from Discord with `/play`, `/skip`, `/queue`… and the buttons on its now-playing card. You choose who may control it.
+- **Discord status**: "Listening to" with the song, artist and time left on your profile (optional, in Settings).
+
 **On Android**
 - Background playback with notification, lock-screen and Bluetooth controls.
 - **Android Auto**: browse Recent, Playlists, Albums and Songs in the car, or ask for music by voice.
@@ -81,6 +85,20 @@ Audio output: choose speakers, headphones or Bluetooth in **Settings → Audio o
 ### Last.fm
 
 Last.fm is optional. Go to **You → Connections → Last.fm** and sign in with your Last.fm account. If the app asks for an API key, the build you have doesn't include one: create a free key at [last.fm/api/account/create](https://www.last.fm/api/account/create) and paste it there.
+
+### Discord bot
+
+On Windows and Linux, open **Discord** in Aurora's menu (under Downloads). The page walks you through it; in short:
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications) and sign in with your Discord account.
+2. **New Application** → name it (e.g. *Aurora*, the name people see) → **Create**.
+3. **Bot** (left menu) → **Reset Token** → **Yes, do it!** → **Copy**. The three "Privileged Gateway Intents" switches can stay off.
+4. Paste the token into Aurora and click **Connect bot**.
+5. Click **Add to a server**, choose your server and **Authorize**. Then pick a voice channel in Aurora and press **Join**, or type `/join` in Discord while you're in a voice channel.
+
+The bot runs inside Aurora on your computer, so it's online while Aurora is open. Keep the token secret: it's like a password for the bot. Aurora stores it only on your computer and never puts it in backups; if it leaks, reset it in the portal and paste the new one.
+
+For **Discord status** ("Listening to" on your profile): Settings → Discord status. It needs the Discord desktop app running on the same computer, and uses your bot's application (or any application you create in the portal; copy its *Application ID*).
 
 ## Please use it fairly
 

@@ -4,7 +4,11 @@ mod lastfm;
 mod images;
 mod library;
 #[cfg(not(aurora_android))]
+mod discord;
+#[cfg(not(aurora_android))]
 mod media_server;
+#[cfg(not(aurora_android))]
+mod presence;
 mod mp4fix;
 mod storage;
 mod store;
@@ -44,6 +48,12 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke<rt::Rt>) -> bool + Send + Sync + 'st
             library::library_import,
             library::library_remove_copies,
             media_server::media_base,
+            discord::discord_token_info,
+            discord::discord_token_set,
+            discord::discord_start,
+            discord::discord_send,
+            discord::discord_stop,
+            presence::presence_set,
             tools::tools_status,
             tools::tools_install,
             tools::tools_update,
@@ -151,6 +161,12 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle().clone();
+            // Discord bot + Rich Presence (Windows and Linux).
+            #[cfg(not(aurora_android))]
+            {
+                app.manage(discord::DiscordBot::default());
+                app.manage(presence::Presence::default());
+            }
             let state = library::LibraryState::load(&handle)?;
             app.manage(state);
             images::allow(&handle)?;

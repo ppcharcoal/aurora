@@ -12,3 +12,9 @@ export const scrobbleHooks: {
   /** Main player started playing (stops any preview). */
   playing?: () => void;
 } = {};
+
+/** The Discord bot follows the player; it registers these (src/lib/discord.svelte.ts). */
+export const discordHooks: {
+  /** The user moved to another point in the song. */
+  seek?: (ms: number) => void;
+} = {};

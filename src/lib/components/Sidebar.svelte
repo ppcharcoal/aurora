@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { discord } from "../discord.svelte";
   import { downloads } from "../downloads.svelte";
   import { lastfm } from "../lastfm.svelte";
   import { playlists } from "../playlists.svelte";
@@ -11,7 +12,7 @@
   import Mosaic from "./Mosaic.svelte";
   import StorageMeter from "./StorageMeter.svelte";
 
-  type Nav = "home" | "search" | "library" | "loved" | "friends" | "downloads";
+  type Nav = "home" | "search" | "library" | "loved" | "friends" | "downloads" | "discord";
   const nav: { route: Nav; label: string; icon: IconName }[] = [
     { route: "home", label: "Home", icon: "home" },
     { route: "search", label: "Search", icon: "search" },
@@ -19,6 +20,8 @@
     { route: "loved", label: "Loved", icon: "heart" },
     { route: "friends", label: "Friends", icon: "users" },
     { route: "downloads", label: "Downloads", icon: "download" },
+    // The Discord bot (Windows and Linux only).
+    ...(discord.supported ? [{ route: "discord" as Nav, label: "Discord", icon: "bot" as IconName }] : []),
   ];
 
   const listened = $derived.by(() => {
@@ -37,6 +40,8 @@
       <span class="lbl">{it.label}</span>
       {#if it.route === "downloads" && downloads.active}
         <span class="badge">{downloads.active}</span>
+      {:else if it.route === "discord" && discord.live}
+        <span class="live">Live</span>
       {:else if it.route === "library" && library.tracks.length}
         <small>{library.tracks.length}</small>
       {:else if it.route === "loved" && lastfm.lovedLocal.length}
@@ -102,6 +107,15 @@
 </nav>
 
 <style>
+  .live {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 8px;
+    border-radius: var(--r-pill);
+    color: var(--night);
+    background: var(--accent);
+  }
   .side {
     display: flex;
     flex-direction: column;

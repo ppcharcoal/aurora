@@ -103,6 +103,14 @@ export class LocalEngine {
     this.audio.volume = this.applied(v);
   }
 
+  /** Mutes this computer's output only; the visualizer still sees the music. */
+  setMuted(muted: boolean) {
+    if (spectrum.hooked) {
+      this.audio.muted = false;
+      spectrum.setMuted(muted);
+    } else this.audio.muted = muted;
+  }
+
   position() {
     return this.audio.currentTime * 1000;
   }

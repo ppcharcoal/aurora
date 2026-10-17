@@ -1,0 +1,19 @@
+{
+  "name": "aurora-discord",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Aurora's Discord bot helper: plays Aurora's music in a voice channel. Started by the app; talks JSON lines on stdin/stdout.",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@discordjs/voice": "0.19.2",
+    "@snazzah/davey": "0.1.12",
+    "discord.js": "14.26.5",
+    "prism-media": "1.3.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

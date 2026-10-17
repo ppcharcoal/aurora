@@ -1,7 +1,7 @@
 {
   "name": "aurora",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.5.0",
   "type": "module",
   "description": "Aurora — a fast, good-looking player for your own music, with YouTube/SoundCloud downloads.",
   "scripts": {
@@ -9,16 +9,17 @@
     "build": "vite build",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "tauri": "tauri",
-    "app:dev": "tauri dev",
-    "app:build": "tauri build",
+    "app:dev": "npm run discord:build && tauri dev",
+    "app:build": "npm run discord:build && tauri build",
     "android:init": "tauri android init && node scripts/android-setup.mjs",
     "android:dev": "tauri android dev",
     "android:build": "tauri android build --apk --split-per-abi --target aarch64",
     "android:signing": "node scripts/android-signing.mjs",
     "linux:core": "cargo build --release --manifest-path src-tauri/Cargo.toml --bin aurora-core --no-default-features --features core",
     "linux:ui": "vite build --mode electron",
-    "linux:start": "npm run linux:core && npm run linux:ui && npm --prefix electron start -- --no-sandbox",
-    "linux:build": "npm run linux:core && npm run linux:ui && npm --prefix electron run dist"
+    "linux:start": "npm run linux:core && npm run linux:ui && npm run discord:build && npm --prefix electron start -- --no-sandbox",
+    "linux:build": "npm run linux:core && npm run linux:ui && npm run discord:build && npm --prefix electron run dist",
+    "discord:build": "npm --prefix discord install --no-audit --no-fund && npm --prefix discord run build"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

@@ -24,6 +24,8 @@
   import Toasts from "./lib/components/Toasts.svelte";
   import Album from "./lib/views/Album.svelte";
   import Downloads from "./lib/views/Downloads.svelte";
+  import Discord from "./lib/views/Discord.svelte";
+  import { discord } from "./lib/discord.svelte";
   import Home from "./lib/views/Home.svelte";
   import Library from "./lib/views/Library.svelte";
   import Playlist from "./lib/views/Playlist.svelte";
@@ -96,7 +98,7 @@
       theme.init();
       // One part failing to load must not leave the whole app blank: report it and carry on.
       await Promise.all(
-        [library.init(), playlists.load(), stats.load(), player.loadProfile(), lastfm.load(), downloads.init(), tools.init()].map((p) =>
+        [library.init(), playlists.load(), stats.load(), player.loadProfile(), lastfm.load(), downloads.init(), tools.init(), discord.init()].map((p) =>
           p.catch(ui.error),
         ),
       );
@@ -171,6 +173,8 @@
               <Search q={ui.route.q ?? ""} />
             {:else if ui.route.name === "downloads"}
               <Downloads tab={ui.route.tab} />
+            {:else if ui.route.name === "discord"}
+              <Discord />
             {:else if ui.route.name === "settings"}
               <Settings />
             {:else if ui.route.name === "album"}

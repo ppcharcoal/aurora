@@ -33,6 +33,8 @@ class Spectrum {
   private raw = new Float32Array(BANDS);
   private el: HTMLMediaElement | null = null;
   private ctx?: AudioContext;
+  private gain?: GainNode;
+  private muted = false;
   private analyser?: AnalyserNode;
   private bins?: Uint8Array<ArrayBuffer>;
   private users = 0;
@@ -49,6 +51,12 @@ class Spectrum {
   /** True once the element feeds the analyser (it must then stay CORS-clean). */
   get hooked() {
     return !!this.ctx;
+  }
+
+  /** Silences the speakers but keeps the levels (Discord-only playback). */
+  setMuted(muted: boolean) {
+    this.muted = muted;
+    if (this.gain) this.gain.gain.value = muted ? 0 : 1;
   }
 
   /** The element couldn't load with CORS: the desktop visualizer can't hear it. */
@@ -77,8 +85,15 @@ class Spectrum {
         an.smoothingTimeConstant = 0.55;
         an.minDecibels = -88;
         an.maxDecibels = -22;
+        const gain = ctx.createGain();
+        // The element may have been muted for Discord: mute after the analyser instead.
+        this.muted = this.muted || this.el.muted;
+        this.el.muted = false;
+        gain.gain.value = this.muted ? 0 : 1;
         src.connect(an);
-        an.connect(ctx.destination);
+        an.connect(gain);
+        gain.connect(ctx.destination);
+        this.gain = gain;
         this.ctx = ctx;
         this.analyser = an;
         this.bins = new Uint8Array(an.frequencyBinCount);

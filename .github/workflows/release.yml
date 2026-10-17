@@ -82,6 +82,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             electron/package-lock.json
+            discord/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -114,6 +115,7 @@ jobs:
         run: |
           npm ci
           npx vite build --mode electron
+          npm run discord:build
           cd electron
           npm ci
           npm version --no-git-tag-version --allow-same-version "${TAG#v}"

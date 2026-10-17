@@ -13,6 +13,8 @@ export interface Track {
   /** File size in bytes. */
   size?: number;
   art?: string;
+  /** The cover picture file itself (local songs), for the Discord bot. */
+  coverPath?: string;
   color?: RGB;
 }
 
@@ -119,4 +121,5 @@ export type Route =
   | { name: "profile" }
   | { name: "loved" }
   | { name: "friends" }
-  | { name: "downloads"; tab?: "queue" | "lastfm" };
+  | { name: "downloads"; tab?: "queue" | "lastfm" }
+  | { name: "discord" };

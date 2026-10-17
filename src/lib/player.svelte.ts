@@ -2,7 +2,7 @@ import { LocalEngine } from "./engines/local";
 import { profiles } from "./profiles.svelte";
 import { settings } from "./settings.svelte";
 import { stats } from "./stats.svelte";
-import { scrobbleHooks } from "./hooks";
+import { discordHooks, scrobbleHooks } from "./hooks";
 import { debouncedSaver, storeGet } from "./store";
 import { library } from "./sources/local.svelte";
 import type { Track } from "./types";
@@ -235,6 +235,12 @@ class Player {
     this.nativeAt = performance.now();
     if (isAndroid) native.call("control", { action: "seek", value: ms }).catch(ui.error);
     else this.engine.seek(ms).catch(ui.error);
+    discordHooks.seek?.(ms);
+  }
+
+  /** Silences this computer's speakers while the music plays in Discord (the player keeps running). */
+  setLocalMuted(muted: boolean) {
+    if (!isAndroid) this.engine.setMuted(muted);
   }
 
   setVolume(v: number) {

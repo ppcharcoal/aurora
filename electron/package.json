@@ -1,7 +1,7 @@
 {
   "name": "aurora",
   "productName": "Aurora",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Aurora music player",
   "homepage": "https://github.com/ppcharcoal/aurora",
   "author": "ppcharcoal <341017455+ppcharcoal@users.noreply.github.com>",
@@ -36,6 +36,10 @@
       {
         "from": "../src-tauri/target/release/aurora-core",
         "to": "aurora-core"
+      },
+      {
+        "from": "../discord/dist",
+        "to": "discord"
       }
     ],
     "asar": true,

@@ -29,6 +29,7 @@ const EVENTS: &[&str] = &[
     "backup://progress",
     "download://progress",
     "download://retry",
+    "discord://event",
     "library://progress",
     "storage://progress",
     "tools://progress",
@@ -53,6 +54,8 @@ pub fn main() {
     let app = mock_builder()
         .plugin(tauri_plugin_opener::init())
         .manage(yt::Downloads::default())
+        .manage(crate::discord::DiscordBot::default())
+        .manage(crate::presence::Presence::default())
         .invoke_handler(handlers())
         .build(ctx)
         .expect("Aurora core failed to start");
