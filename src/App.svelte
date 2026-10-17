@@ -38,7 +38,10 @@
   import PhoneDock from "./lib/components/PhoneDock.svelte";
   import NowPlayingSheet from "./lib/components/NowPlayingSheet.svelte";
   import Visualizer from "./lib/components/Visualizer.svelte";
-  import { isAndroid } from "./lib/platform";
+  import { isAndroid, isElectron } from "./lib/platform";
+
+  // Lets styles tell the Linux (Electron) app apart; see the reduced-motion note in app.css.
+  if (isElectron) document.documentElement.dataset.shell = "electron";
 
   let scroller = $state<HTMLElement>();
   let ready = $state(false);

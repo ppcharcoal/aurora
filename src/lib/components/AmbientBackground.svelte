@@ -88,7 +88,7 @@
     animation: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    .blur {
+    :global(:root:not([data-shell="electron"])) .blur {
       animation: none;
     }
   }

@@ -42,7 +42,7 @@
     }
   }
   @media (prefers-reduced-motion: reduce) {
-    i {
+    :global(:root:not([data-shell="electron"])) i {
       animation: none;
       transform: scaleY(0.6);
     }

@@ -57,16 +57,23 @@
     border-radius: 50%;
     background: var(--night);
   }
+  /* Both ends spelled out with the same functions: with only `to`, the start
+     is the resting translateZ(0), and translateZ(0) → rotate(360deg) is
+     interpolated as matrices (identity → identity), so it never turned. */
   @keyframes spin {
+    from {
+      transform: rotate(0deg) translateZ(0);
+    }
     to {
-      transform: rotate(360deg);
+      transform: rotate(360deg) translateZ(0);
     }
   }
   :global(:root[data-reduce-motion="true"]) .disc {
     animation: none;
   }
+  /* Linux app: only Aurora's own setting counts (see app.css). */
   @media (prefers-reduced-motion: reduce) {
-    .disc {
+    :global(:root:not([data-shell="electron"])) .disc {
       animation: none;
     }
   }

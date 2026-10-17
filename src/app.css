@@ -85,8 +85,11 @@
   --t-slow: 0ms;
 }
 
+/* The system's "reduce animations" switch. Not in the Linux (Electron) app:
+   Chromium takes it from GTK, which many Linux setups (Hyprland, Sway…)
+   turn off without meaning to; Settings → Reduce motion is used there. */
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  :root:not([data-shell="electron"]) {
     --t-fast: 0ms;
     --t-med: 0ms;
     --t-slow: 0ms;
