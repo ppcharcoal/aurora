@@ -1,6 +1,6 @@
 [package]
 name = "aurora"
-version = "0.8.0"
+version = "0.9.0"
 description = "Aurora music player"
 edition = "2021"
 rust-version = "1.80"

@@ -21,7 +21,7 @@
 - **Transitions between songs**, like a DJ mix: *None*, or *Smooth* (skips silent endings and crossfades into the next song). On Windows and Linux, playlists and albums also get a **transition editor**: both whole songs on a zoomable timeline, a playhead you can place anywhere to listen from, drag where the next song comes in, and lines you shape with your own points for volume and effects: **Dampen** (muffle), **Bass** and **Treble** (with undo). Your music files are never changed. Phones get None and Smooth (a fade out and in).
 - Choose the audio output (speakers, headphones, Bluetooth, USB DAC) inside the app.
 - A look that follows the music: the accent colour comes from the cover art, with dark, light and system themes and a choice of backgrounds.
-- **Visualizer**: click (or tap) the playing song's cover for a full-screen visualizer in the spirit of the classic Windows Media Player ones: *Aurora*, *Spectrum*, *Halo* and *Ambience*, all reacting to the music in the cover's colours.
+- **Visualizer**: click (or tap) the playing song's cover for a full-screen visualizer in the spirit of the classic Windows Media Player ones: *Aurora*, *Spectrum*, *Halo*, *Ambience* and *Tunnel*, all reacting to the music in the cover's colours.
 
 **Keep track**
 - Profiles for everyone in the house, each with its own playlists, settings and listening stats: total time, a 14-day chart, top songs and artists.

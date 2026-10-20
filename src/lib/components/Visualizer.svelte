@@ -17,6 +17,7 @@
     { id: "bars", name: "Spectrum", note: "Bars and peaks" },
     { id: "halo", name: "Halo", note: "Around the cover" },
     { id: "ambience", name: "Ambience", note: "Swirl" },
+    { id: "tunnel", name: "Tunnel", note: "Fly through the music" },
   ] as const;
   type Mode = (typeof MODES)[number]["id"];
 
@@ -363,6 +364,112 @@
     g.globalCompositeOperation = "source-over";
   }
 
+  // Tunnel: like the old "Alchemy"/"Battery" tunnels. The last frame is drawn
+  // again a little bigger around a slowly wandering centre, so each glowing,
+  // music-shaped ring streaks outwards and the screen becomes a curving
+  // tunnel you fly through. Single colour from the cover, dark at the core.
+  let tunnelCx = 0.5;
+  let tunnelCy = 0.5;
+  function tunnel(g: CanvasRenderingContext2D, w: number, h: number, time: number) {
+    if (!buffer || buffer.width !== g.canvas.width || buffer.height !== g.canvas.height) {
+      buffer = document.createElement("canvas");
+      buffer.width = g.canvas.width;
+      buffer.height = g.canvas.height;
+    }
+    const b = buffer.getContext("2d")!;
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.clearRect(0, 0, buffer.width, buffer.height);
+    b.drawImage(g.canvas, 0, 0);
+
+    // The centre drifts (the tunnel bends); a kick in the bass jolts it.
+    const tx = 0.5 + Math.sin(time * 0.23) * 0.09 + Math.sin(time * 0.61) * 0.04;
+    const ty = 0.5 + Math.cos(time * 0.19) * 0.07 + Math.sin(time * 0.47) * 0.03;
+    tunnelCx += (tx - tunnelCx) * 0.05 + (Math.random() - 0.5) * spectrum.beat * 0.01;
+    tunnelCy += (ty - tunnelCy) * 0.05 + (Math.random() - 0.5) * spectrum.beat * 0.01;
+    const cx = w * tunnelCx;
+    const cy = h * tunnelCy;
+    const m = Math.min(w, h);
+
+    g.save();
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = "#020403";
+    g.fillRect(0, 0, g.canvas.width, g.canvas.height);
+    g.restore();
+
+    // Feedback: zoom in (we fly forward), turn a little, fade.
+    g.save();
+    // Long trails fill the screen with streaks.
+    g.globalAlpha = 0.968 - spectrum.energy * 0.02;
+    g.translate(cx, cy);
+    g.rotate(0.0035 + Math.sin(time * 0.13) * 0.004 + spectrum.mid * 0.008);
+    const z = 1.035 + spectrum.energy * 0.035 + spectrum.beat * 0.05;
+    g.scale(z, z);
+    g.translate(-cx, -cy);
+    g.drawImage(buffer, 0, 0, w, h);
+    g.restore();
+
+    // The dark core the tunnel disappears into.
+    const core = m * (0.12 + spectrum.bass * 0.06);
+    const hole = g.createRadialGradient(cx, cy, 0, cx, cy, core * 1.8);
+    hole.addColorStop(0, "rgba(0,0,0,0.95)");
+    hole.addColorStop(0.55, "rgba(0,0,0,0.55)");
+    hole.addColorStop(1, "rgba(0,0,0,0)");
+    g.fillStyle = hole;
+    g.beginPath();
+    g.arc(cx, cy, core * 1.8, 0, Math.PI * 2);
+    g.fill();
+
+    // New rings: jagged, electric, shaped by the spectrum (mirrored, so no seam).
+    const [hA, sA] = rgbToHsl(colA);
+    const tint = hslToRgb(hA, Math.max(0.45, Math.min(0.75, sA)), 0.62);
+    const bright = hslToRgb(hA, 0.6, 0.86);
+    g.globalCompositeOperation = "lighter";
+    const N = 180;
+    const rings = 3;
+    for (let k = 0; k < rings; k++) {
+      const R = core * (1.05 + k * 0.09) * (1 + spectrum.beat * 0.25);
+      const lw = 1.3 + spectrum.energy * 2.4 + (k === 0 ? 0.5 : 0);
+      g.beginPath();
+      for (let i = 0; i <= N; i++) {
+        const x = i / N;
+        const a = x * Math.PI * 2 + time * (0.15 + k * 0.05);
+        const v = level(Math.abs(1 - 2 * x));
+        // Organic, electric wobble: a few waves around the ring (whole numbers, so it closes) plus crackle.
+        const th = x * Math.PI * 2;
+        const crackle = 0.4 + spectrum.treble * 1.6;
+        const jag =
+          (Math.sin(7 * th + time * (2.1 + k)) * 0.03 +
+            Math.sin(13 * th - time * (3.7 + k * 0.6)) * 0.022 +
+            Math.sin((23 + k * 4) * th + time * 6.3) * 0.014) *
+            crackle +
+          (Math.random() - 0.5) * 0.025 * crackle;
+        const r = R * (1 + v * 0.55 + jag);
+        const px = cx + Math.cos(a) * r;
+        const py = cy + Math.sin(a) * r;
+        if (i) g.lineTo(px, py);
+        else g.moveTo(px, py);
+      }
+      // A soft glow under a bright line.
+      g.strokeStyle = rgba(tint, 0.16 + spectrum.energy * 0.12);
+      g.lineWidth = lw * 5;
+      g.stroke();
+      g.strokeStyle = rgba(k === 0 ? bright : tint, 0.7 + spectrum.energy * 0.3);
+      g.lineWidth = lw;
+      g.stroke();
+    }
+    // Now and then a loop flies off to the side (the wandering rings in the old tunnels).
+    if (spectrum.beat > 0.45) {
+      const a = Math.random() * Math.PI * 2;
+      const d = m * (0.25 + Math.random() * 0.15);
+      g.strokeStyle = rgba(tint, 0.5);
+      g.lineWidth = 1.2;
+      g.beginPath();
+      g.ellipse(cx + Math.cos(a) * d, cy + Math.sin(a) * d, m * 0.05, m * 0.025, a, 0, Math.PI * 2);
+      g.stroke();
+    }
+    g.globalCompositeOperation = "source-over";
+  }
+
   onMount(() => {
     spectrum.start();
     readColours();
@@ -414,6 +521,7 @@
       if (id === "aurora") aurora(g, w, h, time);
       else if (id === "bars") bars(g, w, h);
       else if (id === "halo") halo(g, w, h, dt);
+      else if (id === "tunnel") tunnel(g, w, h, time);
       else ambience(g, w, h, time, dt);
       raf = requestAnimationFrame(frame);
     };
