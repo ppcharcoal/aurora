@@ -13,6 +13,7 @@
   import { theme } from "../theme.svelte";
   import { tools } from "../tools.svelte";
   import { discord, PORTAL_URL } from "../discord.svelte";
+  import { transitions } from "../transitions.svelte";
   import { ui } from "../ui.svelte";
   import Icon from "../components/Icon.svelte";
   import DataLimit from "../components/DataLimit.svelte";
@@ -249,6 +250,28 @@
     <header><Icon name="output" size={20} /><h2>Audio output</h2></header>
     <p class="muted lead">Where the music plays. Previews use it too.</p>
     <OutputPicker />
+  </section>
+
+  <section class="card">
+    <header><Icon name="next" size={20} /><h2>Playback</h2></header>
+    <span class="lbl">Transitions between songs</span>
+    <div class="seg two">
+      <button class:on={transitions.value.mode === "none"} onclick={() => transitions.setMode("none")}>None<small>Each song plays to its end, then the next starts</small></button>
+      <button class:on={transitions.value.mode === "smooth"} onclick={() => transitions.setMode("smooth")}>
+        Smooth<small>{isAndroid ? "Songs fade out and the next fades in" : "Skips silence and blends one song into the next"}</small>
+      </button>
+    </div>
+    {#if transitions.value.mode === "smooth"}
+      <span class="lbl spaced">Smooth transition length: {(transitions.value.smoothMs / 1000).toFixed(0)} s</span>
+      <input class="range" type="range" min="1000" max="12000" step="1000" value={transitions.value.smoothMs} oninput={(e) => transitions.setSmoothMs(+e.currentTarget.value)} aria-label="Smooth transition length" />
+    {/if}
+    <p class="note">
+      {#if isAndroid}
+        Custom transitions are made in Aurora on a PC. Your music files are never changed.
+      {:else}
+        For your own mixes, open a playlist or album and click <b>Transitions</b>: choose per song, or make a custom one in the editor. Transitions never change your music files.
+      {/if}
+    </p>
   </section>
 
   <section class="card">
@@ -768,6 +791,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .range {
+    width: min(380px, 100%);
+    accent-color: var(--accent);
   }
   .appid {
     flex: 1;

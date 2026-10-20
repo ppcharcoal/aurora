@@ -45,6 +45,57 @@ class PlaybackService : MediaLibraryService() {
     @Volatile
     var current: PlaybackService? = null
       private set
+
+    /** "Smooth" transitions: fade length in ms (0 = None). Set by the app, remembered for Android Auto. */
+    @Volatile
+    var fadeMs = 0L
+      private set
+
+    fun setTransition(context: android.content.Context, ms: Long) {
+      fadeMs = ms.coerceIn(0L, 12_000L)
+      context.getSharedPreferences("aurora", android.content.Context.MODE_PRIVATE).edit().putLong("fadeMs", fadeMs).apply()
+      current?.applyFade()
+    }
+  }
+
+  /* ---- Smooth transitions: the end of a song fades out, the next fades in. ----
+     The music files are untouched; only the player's volume moves. */
+
+  /** The volume chosen in the app (0–1); fades work on top of it. */
+  var userVolume = 1f
+    set(v) {
+      field = v.coerceIn(0f, 1f)
+      applyFade()
+    }
+  private var fadingIn = false
+  private val fader = android.os.Handler(android.os.Looper.getMainLooper())
+  private val fadeTick = object : Runnable {
+    override fun run() {
+      applyFade()
+      if (player.isPlaying && fadeMs > 0) fader.postDelayed(this, 80)
+    }
+  }
+
+  fun applyFade() {
+    if (!::player.isInitialized) return
+    val ms = fadeMs
+    if (ms <= 0 || player.repeatMode == Player.REPEAT_MODE_ONE) {
+      fadingIn = false
+      player.volume = userVolume
+      return
+    }
+    val pos = player.currentPosition
+    val dur = player.duration
+    var f = 1f
+    if (dur != C.TIME_UNSET && dur > ms * 2 && player.hasNextMediaItem()) {
+      f = minOf(f, ((dur - pos).toFloat() / ms).coerceIn(0f, 1f))
+    }
+    val inMs = ms / 2
+    if (fadingIn) {
+      if (pos >= inMs) fadingIn = false else f = minOf(f, (pos.toFloat() / inMs).coerceIn(0f, 1f))
+    }
+    // Equal-power curve: sounds even, no dip in the middle.
+    player.volume = userVolume * kotlin.math.sin(f * Math.PI.toFloat() / 2f)
   }
 
   override fun onCreate() {
@@ -66,16 +117,24 @@ class PlaybackService : MediaLibraryService() {
       .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
       .setWakeMode(C.WAKE_MODE_LOCAL)
       .build()
+    fadeMs = getSharedPreferences("aurora", MODE_PRIVATE).getLong("fadeMs", 0L)
     Outputs.apply(this, player)
     PlayLog.attach(this, player)
     player.addListener(object : Player.Listener {
       private var errors = 0
 
-      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) = saveQueue()
+      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        // Only songs that follow on by themselves fade in (not a tap on another song).
+        fadingIn = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && fadeMs > 0
+        applyFade()
+        saveQueue()
+      }
       override fun onTimelineChanged(timeline: Timeline, reason: Int) = saveQueue()
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (isPlaying) errors = 0
+        fader.removeCallbacks(fadeTick)
+        if (isPlaying && fadeMs > 0) fader.post(fadeTick)
       }
 
       // A missing or broken file: skip it (a few times at most), like the desktop app.

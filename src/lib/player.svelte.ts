@@ -9,6 +9,7 @@ import type { Track } from "./types";
 import { ui } from "./ui.svelte";
 import { native, type NativePlay, type NativeState } from "./native";
 import { isAndroid } from "./platform";
+import { pairKey, transitions } from "./transitions.svelte";
 
 export type Repeat = "off" | "all" | "one";
 
@@ -69,8 +70,22 @@ class Player {
       duration: (ms) => {
         if (ms > 0) this.duration = ms;
       },
+      mixed: () => this.onMixed(),
     });
-    if (!isAndroid) this.setupMediaSession();
+    if (!isAndroid) {
+      this.setupMediaSession();
+      // Plan the transition into whatever comes next whenever that changes.
+      $effect.root(() => {
+        $effect(() => {
+          void this.current;
+          void this.queue;
+          void this.index;
+          void this.repeat;
+          void transitions.version;
+          this.reschedule();
+        });
+      });
+    }
   }
 
   /** Recently played list for the active profile. */
@@ -247,6 +262,49 @@ class Player {
     settings.set("volume", v);
     if (isAndroid) native.call("control", { action: "volume", value: v * v }).catch(() => {});
     else this.engine.setVolume(v);
+  }
+
+  /** Where the queue goes after the current song (-1: it stops). */
+  private nextIndex() {
+    if (this.repeat === "one") return -1;
+    if (this.index + 1 < this.queue.length) return this.index + 1;
+    return this.repeat === "all" && this.queue.length > 1 ? 0 : -1;
+  }
+
+  private planned = "";
+
+  /** Tells the engine how to go into the next song (see transitions.svelte.ts). */
+  private reschedule() {
+    const a = this.current;
+    const j = this.nextIndex();
+    const b = j >= 0 ? this.queue[j] : null;
+    if (!a || !b || a.key === b.key) {
+      this.planned = "";
+      this.engine.schedule(null, null);
+      return;
+    }
+    const key = pairKey(a, b) + "#" + transitions.version;
+    this.planned = key;
+    this.engine.schedule(b, transitions.planNow(a, b));
+    // Smooth: refine once the songs' silent ends are known.
+    transitions.plan(a, b).then((mix) => {
+      if (this.planned === key && !this.engine.mixing) this.engine.schedule(b, mix);
+    });
+  }
+
+  /** A transition began: the next song is now the current one (it's already playing). */
+  private onMixed() {
+    const i = this.nextIndex();
+    const track = this.queue[i];
+    if (!track) return;
+    this.index = i;
+    this.position = this.engine.position();
+    this.duration = track.durationMs;
+    this.loading = false;
+    stats.newPlay();
+    scrobbleHooks.start?.(track);
+    this.pushRecent(track);
+    this.syncMediaSession();
   }
 
   private onEnded() {

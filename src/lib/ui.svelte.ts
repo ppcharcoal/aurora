@@ -1,4 +1,4 @@
-import type { Route } from "./types";
+import type { Route, Track } from "./types";
 import type { IconName } from "./components/Icon.svelte";
 
 type ToastKind = "info" | "error" | "success";
@@ -38,6 +38,10 @@ class UI {
   toasts = $state<Toast[]>([]);
   menu = $state<{ x: number; y: number; items: MenuItem[] } | null>(null);
   promptState = $state<PromptState | null>(null);
+  /** Transitions list for a playlist or album (desktop). */
+  transitionList = $state<{ title: string; tracks: Track[] } | null>(null);
+  /** The transition editor for one pair of songs (desktop). */
+  transitionEdit = $state<{ a: Track; b: Track } | null>(null);
   private nextToast = 1;
 
   go(route: Route) {

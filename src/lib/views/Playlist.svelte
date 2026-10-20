@@ -5,6 +5,7 @@
   import { player } from "../player.svelte";
   import { playlists } from "../playlists.svelte";
   import { ui } from "../ui.svelte";
+  import { isAndroid } from "../platform";
   import Icon from "../components/Icon.svelte";
   import Mosaic from "../components/Mosaic.svelte";
   import TrackList from "../components/TrackList.svelte";
@@ -73,6 +74,11 @@
           <button class="btn" onclick={() => player.shuffleAll(tracks)} disabled={!tracks.length}>
             <Icon name="shuffle" size={16} /> Shuffle
           </button>
+          {#if !isAndroid}
+            <button class="btn" onclick={() => (ui.transitionList = { title: p?.name ?? "Playlist", tracks })} disabled={tracks.length < 2} title="Transitions between the songs">
+              <Icon name="next" size={16} /> Transitions
+            </button>
+          {/if}
           <button class="btn round" onclick={more} aria-label="Playlist options"><Icon name="more" size={18} stroke={3} /></button>
         </div>
       </div>

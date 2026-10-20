@@ -180,6 +180,8 @@ The key is then built into the app, and Profile → Last.fm shows only **Connect
 src/                         Svelte UI
   App.svelte                 window shell, routing, shortcuts
   lib/player.svelte.ts       queue + transport (on Android it drives the native player)
+  lib/transitions.svelte.ts  song-to-song transitions (None / Smooth / custom mixes); engines/local.ts plays them on two decks
+  lib/components/TransitionEditor.svelte  the transition editor
   lib/output.svelte.ts       audio output device choice (Windows: setSinkId, Android: native)
   lib/downloads.svelte.ts    download queue (2 parallel), progress, auto-import
   lib/playlists.svelte.ts    playlists (stored as JSON)
@@ -198,6 +200,7 @@ src-tauri/src/
   mp4fix.rs                  M4A repair: rebuilds fragmented files, fixes audio offsets broken by tagging
   store.rs                   JSON settings storage
   media_server.rs            Linux: serves songs and pictures to the window on 127.0.0.1
+  audio.rs                   waveforms and silence detection for transitions (FFmpeg, read-only)
   discord.rs                 starts the Discord bot helper, keeps the bot token, passes messages
   presence.rs                Discord Rich Presence over the Discord app's local IPC socket
   core.rs                    Linux: aurora-core, the window-less helper behind the Electron app

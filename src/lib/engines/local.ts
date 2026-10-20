@@ -1,6 +1,7 @@
 import { mediaSrc } from "../media";
 import { output } from "../output.svelte";
 import { spectrum } from "../spectrum";
+import { gainA, gainB, mixEnd, type Mix } from "../transitions.svelte";
 import type { Track } from "../types";
 
 export interface EngineEvents {
@@ -8,28 +9,68 @@ export interface EngineEvents {
   ended(): void;
   error(message: string): void;
   duration?(ms: number): void;
+  /** A transition started: the next song is now the one playing. */
+  mixed?(): void;
 }
 
 const FADE_MS = 140;
+const TICK_MS = 40;
+/** Start loading the next song this long before its transition. */
+const PRELOAD_MS = 12000;
 
-/** Plays local files through WebView2's native media pipeline (hardware decoding, low CPU). */
+interface Running {
+  out: HTMLAudioElement;
+  inc: HTMLAudioElement;
+  mix: Mix;
+  outDone: boolean;
+}
+
+/**
+ * Plays local files through the web view's media pipeline (hardware decoding,
+ * low CPU). Two "decks" (audio elements): one plays, the other gets the next
+ * song ready, so a transition can overlap the end of one song with the start
+ * of the next, with volume fades on both.
+ */
 export class LocalEngine {
-  private audio = new Audio();
+  private decks = [new Audio(), new Audio()];
+  private cur = 0;
   private volume = 0.8;
   private fadeRaf = 0;
+  private timer: ReturnType<typeof setInterval> | undefined;
+  /** The transition into the next song, if one is planned. */
+  private next: { track: Track; mix: Mix } | null = null;
+  private preloaded: string | null = null;
+  private running: Running | null = null;
 
   constructor(private ev: EngineEvents) {
-    const a = this.audio;
+    for (const a of this.decks) this.setup(a);
+  }
+
+  private get a() {
+    return this.decks[this.cur];
+  }
+  private get b() {
+    return this.decks[1 - this.cur];
+  }
+
+  private setup(a: HTMLAudioElement) {
+    const ev = this.ev;
     a.preload = "auto";
-    // CORS mode, so the visualizer may read the sound (Tauri's file server allows it).
+    // CORS mode, so the visualizer may read the sound (Aurora's file server allows it).
     a.crossOrigin = "anonymous";
     output.attach(a);
     spectrum.register(a);
-    a.addEventListener("playing", () => ev.state(true));
-    a.addEventListener("pause", () => ev.state(false));
-    a.addEventListener("ended", () => ev.ended());
+    // Only the deck that's playing "the" song reports; the one fading out stays quiet.
+    a.addEventListener("playing", () => a === this.a && ev.state(true));
+    a.addEventListener("pause", () => {
+      if (a === this.a && !this.switching) ev.state(false);
+    });
+    a.addEventListener("ended", () => {
+      if (a === this.a) ev.ended();
+      else if (this.running?.out === a) this.running.outDone = true;
+    });
     a.addEventListener("loadedmetadata", () => {
-      if (Number.isFinite(a.duration)) ev.duration?.(a.duration * 1000);
+      if (a === this.a && Number.isFinite(a.duration)) ev.duration?.(a.duration * 1000);
     });
     a.addEventListener("error", async () => {
       const src = a.getAttribute("src");
@@ -47,27 +88,43 @@ export class LocalEngine {
           spectrum.corsBroken();
           a.src = src;
           a.currentTime = at;
-          a.play().catch(() => {});
+          if (a === this.a) a.play().catch(() => {});
           return;
         }
       }
-      ev.error("Couldn't play this file — it may have been moved, or its format isn't supported.");
+      if (a === this.a) ev.error("Couldn't play this file — it may have been moved, or its format isn't supported.");
+      else if (this.preloaded) this.preloaded = null; // try again (or skip the transition) when it's time
     });
   }
+
+  /* --------------------------------------------------------- volume -- */
 
   /** Perceptual (quadratic) volume curve feels much more natural than linear. */
   private applied(v: number) {
     return Math.min(1, Math.max(0, v * v));
   }
 
+  private applyVolumes() {
+    const base = this.applied(this.volume);
+    const r = this.running;
+    if (!r) {
+      this.a.volume = base;
+      return;
+    }
+    const bT = r.mix.bStart + (r.inc.currentTime * 1000 - r.mix.bOffset);
+    if (!r.outDone) r.out.volume = Math.min(1, base * gainA(r.mix, r.out.currentTime * 1000));
+    r.inc.volume = Math.min(1, base * gainB(r.mix, bT));
+  }
+
   private fade(to: number): Promise<void> {
     cancelAnimationFrame(this.fadeRaf);
-    const from = this.audio.volume;
+    const a = this.a;
+    const from = a.volume;
     const start = performance.now();
     return new Promise((resolve) => {
       const step = (now: number) => {
         const k = Math.min(1, (now - start) / FADE_MS);
-        this.audio.volume = from + (to - from) * k;
+        a.volume = from + (to - from) * k;
         if (k < 1) this.fadeRaf = requestAnimationFrame(step);
         else resolve();
       };
@@ -75,43 +132,161 @@ export class LocalEngine {
     });
   }
 
+  /* ------------------------------------------------------ transitions -- */
+
+  private switching = false;
+
+  /** The next song and how to go into it (null: one after the other). */
+  schedule(track: Track | null, mix: Mix | null) {
+    this.next = track && mix ? { track, mix } : null;
+    if (this.preloaded && this.preloaded !== this.next?.track.path) this.clearDeck(this.b);
+    this.syncTimer();
+  }
+
+  /** A transition is under way. */
+  get mixing() {
+    return !!this.running;
+  }
+
+  private clearDeck(d: HTMLAudioElement) {
+    if (this.running && (d === this.running.out || d === this.running.inc)) return;
+    d.pause();
+    if (d.getAttribute("src")) {
+      d.removeAttribute("src");
+      d.load();
+    }
+    if (d === this.b) this.preloaded = null;
+  }
+
+  private syncTimer() {
+    const need = !!this.running || (!!this.next && !this.a.paused);
+    if (need && !this.timer) this.timer = setInterval(() => this.tick(), TICK_MS);
+    if (!need && this.timer) {
+      clearInterval(this.timer);
+      this.timer = undefined;
+    }
+  }
+
+  private tick() {
+    if (this.running) return this.step();
+    const n = this.next;
+    const a = this.a;
+    if (!n || a.paused) return this.syncTimer();
+    const t = a.currentTime * 1000;
+    if (this.preloaded !== n.track.path && t >= n.mix.bStart - PRELOAD_MS) {
+      const b = this.b;
+      b.pause();
+      b.volume = 0;
+      b.src = mediaSrc(n.track.path);
+      b.currentTime = n.mix.bOffset / 1000;
+      b.load();
+      this.preloaded = n.track.path;
+    }
+    if (t >= n.mix.bStart) this.start(t);
+  }
+
+  private start(t: number) {
+    const n = this.next!;
+    const out = this.a;
+    const inc = this.b;
+    if (this.preloaded !== n.track.path) inc.src = mediaSrc(n.track.path);
+    inc.volume = 0;
+    inc.muted = out.muted;
+    inc.currentTime = (n.mix.bOffset + Math.max(0, t - n.mix.bStart)) / 1000;
+    this.running = { out, inc, mix: n.mix, outDone: false };
+    this.next = null;
+    this.preloaded = null;
+    this.cur = 1 - this.cur;
+    inc.play().catch(() => this.ev.error("Couldn't play the next song."));
+    this.ev.mixed?.();
+    this.step();
+  }
+
+  private step() {
+    const r = this.running!;
+    this.applyVolumes();
+    const aT = r.out.currentTime * 1000;
+    if (!r.outDone && (aT >= r.mix.aEnd || r.out.ended)) {
+      r.outDone = true;
+      r.out.pause();
+    }
+    const bT = r.mix.bStart + (r.inc.currentTime * 1000 - r.mix.bOffset);
+    if (r.outDone && bT >= mixEnd(r.mix)) this.finish();
+  }
+
+  /** Ends a transition now (song changed, seek…): the incoming song carries on alone. */
+  private finish() {
+    const r = this.running;
+    if (!r) return;
+    this.running = null;
+    r.out.pause();
+    this.clearDeck(r.out);
+    this.applyVolumes();
+    this.syncTimer();
+  }
+
+  /* -------------------------------------------------------- transport -- */
+
   async load(track: Track, autoplay: boolean) {
     cancelAnimationFrame(this.fadeRaf);
-    this.audio.src = mediaSrc(track.path);
-    this.audio.volume = this.applied(this.volume);
-    if (autoplay) await this.audio.play();
+    this.finish();
+    this.next = null;
+    this.switching = true;
+    this.clearDeck(this.b);
+    const a = this.a;
+    a.src = mediaSrc(track.path);
+    a.volume = this.applied(this.volume);
+    this.switching = false;
+    if (autoplay) await a.play();
+    this.syncTimer();
   }
 
   async play() {
-    this.audio.volume = 0;
-    await this.audio.play();
+    if (this.running) {
+      if (!this.running.outDone) this.running.out.play().catch(() => {});
+      await this.a.play();
+      this.syncTimer();
+      return;
+    }
+    this.a.volume = 0;
+    await this.a.play();
+    this.syncTimer();
     await this.fade(this.applied(this.volume));
   }
 
   async pause() {
+    if (this.running) {
+      this.running.out.pause();
+      this.a.pause();
+      return;
+    }
     await this.fade(0);
-    this.audio.pause();
+    this.a.pause();
+    this.syncTimer();
   }
 
   async seek(ms: number) {
-    this.audio.currentTime = ms / 1000;
+    this.finish();
+    this.a.currentTime = ms / 1000;
+    this.syncTimer();
   }
 
   setVolume(v: number) {
     this.volume = v;
     cancelAnimationFrame(this.fadeRaf);
-    this.audio.volume = this.applied(v);
+    this.applyVolumes();
   }
 
   /** Mutes this computer's output only; the visualizer still sees the music. */
   setMuted(muted: boolean) {
-    if (spectrum.hooked) {
-      this.audio.muted = false;
-      spectrum.setMuted(muted);
-    } else this.audio.muted = muted;
+    for (const d of this.decks) {
+      if (spectrum.hooked) d.muted = false;
+      else d.muted = muted;
+    }
+    if (spectrum.hooked) spectrum.setMuted(muted);
   }
 
   position() {
-    return this.audio.currentTime * 1000;
+    return this.a.currentTime * 1000;
   }
 }

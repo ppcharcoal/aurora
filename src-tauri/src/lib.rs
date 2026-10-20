@@ -4,6 +4,8 @@ mod lastfm;
 mod images;
 mod library;
 #[cfg(not(aurora_android))]
+mod audio;
+#[cfg(not(aurora_android))]
 mod discord;
 #[cfg(not(aurora_android))]
 mod media_server;
@@ -48,6 +50,8 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke<rt::Rt>) -> bool + Send + Sync + 'st
             library::library_import,
             library::library_remove_copies,
             media_server::media_base,
+            audio::audio_peaks,
+            audio::audio_bounds,
             discord::discord_token_info,
             discord::discord_token_set,
             discord::discord_start,

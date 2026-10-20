@@ -132,7 +132,7 @@ class Profiles {
     if (p?.avatar) invoke("image_remove", { kind: "avatar", name: p.avatar }).catch(() => {});
     const theirs = await storeGet<{ wallpaper?: string }>(`p-${id}-settings`);
     if (theirs?.wallpaper) invoke("image_remove", { kind: "wallpaper", name: theirs.wallpaper }).catch(() => {});
-    for (const name of ["settings", "playlists", "stats", "recent"]) await storeSet(`p-${id}-${name}`, null);
+    for (const name of ["settings", "playlists", "stats", "recent", "transitions"]) await storeSet(`p-${id}-${name}`, null);
     this.list = this.list.filter((x) => x.id !== id);
     if (this.activeId === id) {
       this.activeId = this.list[0].id;

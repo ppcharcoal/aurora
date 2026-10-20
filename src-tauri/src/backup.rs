@@ -268,6 +268,14 @@ pub fn create_to<W: Write + Seek>(
 
 /* ------------------------------- restore ------------------------------ */
 
+/// Transitions are saved per pair of songs as "<idA>><idB>".
+fn pair_key(k: &str, map: &HashMap<String, String>) -> Option<String> {
+    let (a, b) = k.split_once('>')?;
+    let na = map.get(a).map(String::as_str).unwrap_or(a);
+    let nb = map.get(b).map(String::as_str).unwrap_or(b);
+    (na != a || nb != b).then(|| format!("{na}>{nb}"))
+}
+
 /// Replaces old track ids and old paths anywhere in a JSON document
 /// (string values and object keys).
 pub(crate) fn remap(v: &mut Value, map: &HashMap<String, String>) {
@@ -282,7 +290,7 @@ pub(crate) fn remap(v: &mut Value, map: &HashMap<String, String>) {
             let entries: Vec<(String, Value)> = std::mem::take(o).into_iter().collect();
             for (k, mut val) in entries {
                 remap(&mut val, map);
-                let key = map.get(&k).cloned().unwrap_or(k);
+                let key = map.get(&k).cloned().unwrap_or_else(|| pair_key(&k, map).unwrap_or(k));
                 // Merge numbers if two old keys collapse into one (rare).
                 match (o.get_mut(&key), &val) {
                     (Some(Value::Number(a)), Value::Number(b)) => {
@@ -596,6 +604,15 @@ pub async fn backup_restore_fd(app: AppHandle, fd: i32, music_dest: String) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remaps_transition_pairs() {
+        let map: HashMap<String, String> = [("a1".to_string(), "x1".to_string()), ("b2".to_string(), "y2".to_string())].into();
+        let mut v = serde_json::json!({"mode": "smooth", "pairs": {"a1>b2": {"mode": "none"}, "a1>zz": {"mode": "smooth"}}});
+        remap(&mut v, &map);
+        assert_eq!(v["pairs"]["x1>y2"]["mode"], "none");
+        assert_eq!(v["pairs"]["x1>zz"]["mode"], "smooth");
+    }
 
     /// A backup made on Windows (C:\ paths) restores on Linux / Android:
     /// files land under the chosen folder and every reference is remapped.

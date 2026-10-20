@@ -31,7 +31,7 @@ class Spectrum {
   unavailable = "";
 
   private raw = new Float32Array(BANDS);
-  private el: HTMLMediaElement | null = null;
+  private els: HTMLMediaElement[] = [];
   private ctx?: AudioContext;
   private gain?: GainNode;
   private muted = false;
@@ -43,9 +43,9 @@ class Spectrum {
   private bassAvg = 0;
   private sinceBeat = 0;
 
-  /** The desktop player's audio element (LocalEngine registers it). */
+  /** The desktop player's audio elements (LocalEngine registers its two decks). */
   register(el: HTMLMediaElement) {
-    this.el = el;
+    if (!this.els.includes(el)) this.els.push(el);
   }
 
   /** True once the element feeds the analyser (it must then stay CORS-clean). */
@@ -75,22 +75,23 @@ class Spectrum {
       await native.call("vizStart").catch(() => {});
       return;
     }
-    if (!this.el || this.unavailable) return;
+    if (!this.els.length || this.unavailable) return;
     if (!this.ctx) {
       try {
         const ctx = new AudioContext({ latencyHint: "playback" });
-        const src = ctx.createMediaElementSource(this.el);
         const an = ctx.createAnalyser();
         an.fftSize = 4096;
         an.smoothingTimeConstant = 0.55;
         an.minDecibels = -88;
         an.maxDecibels = -22;
         const gain = ctx.createGain();
-        // The element may have been muted for Discord: mute after the analyser instead.
-        this.muted = this.muted || this.el.muted;
-        this.el.muted = false;
+        // The elements may have been muted for Discord: mute after the analyser instead.
+        this.muted = this.muted || this.els.some((e) => e.muted);
+        for (const el of this.els) {
+          el.muted = false;
+          ctx.createMediaElementSource(el).connect(an);
+        }
         gain.gain.value = this.muted ? 0 : 1;
-        src.connect(an);
         an.connect(gain);
         gain.connect(ctx.destination);
         this.gain = gain;

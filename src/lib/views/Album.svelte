@@ -4,6 +4,7 @@
   import { player } from "../player.svelte";
   import type { Album } from "../types";
   import { ui } from "../ui.svelte";
+  import { isAndroid } from "../platform";
   import Artwork from "../components/Artwork.svelte";
   import Icon from "../components/Icon.svelte";
   import TrackList from "../components/TrackList.svelte";
@@ -31,6 +32,11 @@
         <button class="btn" onclick={(e) => ui.openMenu(e, addToPlaylistItems(album.tracks.map((t) => t.id)))}>
           <Icon name="playlistAdd" size={16} /> Add to playlist
         </button>
+        {#if !isAndroid && album.tracks.length > 1}
+          <button class="btn" onclick={() => (ui.transitionList = { title: album.name, tracks: album.tracks })} title="Transitions between the songs">
+            <Icon name="next" size={16} /> Transitions
+          </button>
+        {/if}
       </div>
     </div>
   </header>

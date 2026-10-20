@@ -18,6 +18,9 @@
   import Menu from "./lib/components/Menu.svelte";
   import NowPlayingBar from "./lib/components/NowPlayingBar.svelte";
   import PromptDialog from "./lib/components/PromptDialog.svelte";
+  import TransitionEditor from "./lib/components/TransitionEditor.svelte";
+  import TransitionList from "./lib/components/TransitionList.svelte";
+  import { transitions } from "./lib/transitions.svelte";
   import QueuePanel from "./lib/components/QueuePanel.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import TitleBar from "./lib/components/TitleBar.svelte";
@@ -98,7 +101,7 @@
       theme.init();
       // One part failing to load must not leave the whole app blank: report it and carry on.
       await Promise.all(
-        [library.init(), playlists.load(), stats.load(), player.loadProfile(), lastfm.load(), downloads.init(), tools.init(), discord.init()].map((p) =>
+        [library.init(), playlists.load(), stats.load(), player.loadProfile(), transitions.load(), lastfm.load(), downloads.init(), tools.init(), discord.init()].map((p) =>
           p.catch(ui.error),
         ),
       );
@@ -220,6 +223,14 @@
 
 <Menu />
 <PromptDialog />
+{#if ui.transitionList}
+  <TransitionList title={ui.transitionList.title} tracks={ui.transitionList.tracks} />
+{/if}
+{#if ui.transitionEdit}
+  {#key ui.transitionEdit}
+    <TransitionEditor a={ui.transitionEdit.a} b={ui.transitionEdit.b} />
+  {/key}
+{/if}
 
 <style>
   .shell {
