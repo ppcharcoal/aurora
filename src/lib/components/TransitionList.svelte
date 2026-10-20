@@ -60,9 +60,9 @@
         <li>
           <span class="n">{p.n}</span>
           <span class="songs">
-            <span class="t">{p.a.title}</span>
+            <span class="t" title={`${p.a.title} — ${p.a.artist}`}>{p.a.title}</span>
             <Icon name="next" size={12} />
-            <span class="t">{p.b.title}</span>
+            <span class="t" title={`${p.b.title} — ${p.b.artist}`}>{p.b.title}</span>
           </span>
           <select class="field" value={mode} onchange={(e) => choose(p.a, p.b, e.currentTarget.value)} aria-label={`Transition from ${p.a.title} to ${p.b.title}`}>
             <option value="default">Default ({defaultLabel})</option>
@@ -95,7 +95,7 @@
     translate: -50% -50%;
     width: min(760px, calc(100vw - 32px));
     max-height: calc(100vh - 48px);
-    overflow: auto;
+    overflow: hidden auto;
     padding: 22px 24px;
     border-radius: var(--r-panel);
     background: var(--night-2);
@@ -127,6 +127,8 @@
     color: var(--ink-3);
   }
   .btn.sm {
+    flex: none;
+    white-space: nowrap;
     height: 30px;
     padding: 0 12px;
     font-size: 13px;
@@ -140,12 +142,16 @@
     margin: 0;
     padding: 0;
     display: grid;
+    /* minmax(0, …): long song names shrink (with "…") instead of widening the rows. */
+    grid-template-columns: minmax(0, 1fr);
     gap: 6px;
   }
   .pairs li {
     display: flex;
+    flex-wrap: wrap;
+    min-width: 0;
     align-items: center;
-    gap: 10px;
+    gap: 8px 10px;
     padding: 8px 8px 8px 12px;
     border-radius: 12px;
     background: var(--well);
@@ -158,7 +164,7 @@
     font-size: 13px;
   }
   .songs {
-    flex: 1;
+    flex: 1 1 240px;
     min-width: 0;
     display: flex;
     align-items: center;
@@ -174,6 +180,7 @@
     flex: 1;
   }
   select.field {
+    flex: none;
     width: 150px;
     height: 32px;
     padding: 0 8px;
