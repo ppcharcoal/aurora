@@ -3,6 +3,7 @@ import { native } from "./native";
 import { isAndroid } from "./platform";
 import { profiles } from "./profiles.svelte";
 import { debouncedSaver, storeGet } from "./store";
+import { NEUTRAL, type Fx } from "./audiograph";
 import type { Track } from "./types";
 
 /**
@@ -45,7 +46,20 @@ export interface Mix {
    */
   aPoints?: Point[];
   bPoints?: Point[];
+  /** Effects drawn in the editor, same timing rules as the volume points. */
+  aFx?: FxLanes;
+  bFx?: FxLanes;
 }
+
+/**
+ * Effect lines. Values 0–1: dampen 0 = clear … 1 = fully muffled; bass and
+ * treble 0.5 = unchanged, 0 = −12 dB, 1 = +12 dB. No line = no effect.
+ */
+export type FxName = "damp" | "bass" | "treble";
+export type FxLanes = Partial<Record<FxName, Point[]>>;
+export const FX_NAMES: FxName[] = ["damp", "bass", "treble"];
+/** The "no effect" value of each line. */
+export const FX_REST: Record<FxName, number> = { damp: 0, bass: 0.5, treble: 0.5 };
 
 /** One volume point: time (ms) and volume (0–1). */
 export interface Point {
@@ -119,8 +133,46 @@ export function gainB(m: Mix, t: number) {
   return inG * level;
 }
 
+const toFx = (name: FxName, v: number) => (name === "damp" ? v : (v - 0.5) * 2);
+
+/** Effects on A at A-time `t`. */
+export function fxA(m: Mix, t: number): Fx {
+  const out: Fx = { ...NEUTRAL };
+  for (const n of FX_NAMES) {
+    const pts = m.aFx?.[n];
+    if (pts?.length) out[n] = toFx(n, along(pts, t, m.curve));
+  }
+  return out;
+}
+
+/** Effects on B at A-time `t`; after a line's last point it eases back to "no effect". */
+export function fxB(m: Mix, t: number): Fx {
+  const out: Fx = { ...NEUTRAL };
+  const r = t - m.bStart;
+  for (const n of FX_NAMES) {
+    const pts = m.bFx?.[n];
+    if (!pts?.length) continue;
+    const last = pts[pts.length - 1];
+    const v = r <= last.t ? along(pts, r, m.curve) : last.g + (FX_REST[n] - last.g) * Math.min(1, (r - last.t) / SETTLE_MS);
+    out[n] = toFx(n, v);
+  }
+  return out;
+}
+
+/** Any effect lines at all? */
+export const hasFx = (f?: FxLanes) => !!f && FX_NAMES.some((n) => f[n]?.length);
+
 /** When the transition is completely over, on A's timeline. */
 export function mixEnd(m: Mix) {
+  let fxEnd = 0;
+  for (const n of FX_NAMES) {
+    const last = m.bFx?.[n]?.at(-1);
+    if (last) fxEnd = Math.max(fxEnd, m.bStart + last.t + (Math.abs(last.g - FX_REST[n]) > 0.001 ? SETTLE_MS : 0));
+  }
+  return Math.max(fxEnd, mixEndVolume(m));
+}
+
+function mixEndVolume(m: Mix) {
   if (m.bPoints?.length) {
     const last = m.bPoints[m.bPoints.length - 1];
     return Math.max(m.aEnd, m.bStart + last.t + (last.g < 1 ? SETTLE_MS : 0));
@@ -139,6 +191,12 @@ export function withPoints(m: Mix): Mix {
   const b: Point[] = [{ t: 0, g: m.fadeIn > 0 ? 0 : m.bGain }];
   if (m.fadeIn > 0) b.push({ t: m.fadeIn, g: m.bGain });
   return { ...m, aPoints: m.aPoints ?? a, bPoints: m.bPoints ?? b };
+}
+
+function cleanFx(f: FxLanes, min: number, max: number): FxLanes {
+  const out: FxLanes = {};
+  for (const n of FX_NAMES) if (f[n]?.length) out[n] = cleanPoints(f[n], min, max);
+  return out;
 }
 
 const cleanPoints = (pts: Point[] | undefined, min: number, max: number) =>
@@ -163,6 +221,8 @@ export function clampMix(m: Mix, aDur: number, bDur: number): Mix {
     curve: m.curve === "linear" ? "linear" : "smooth",
     ...(m.aPoints ? { aPoints: cleanPoints(m.aPoints, 0, aEnd) } : {}),
     ...(m.bPoints ? { bPoints: cleanPoints(m.bPoints, 0, Math.max(0, (bDur || 600000) - bOffset)) } : {}),
+    ...(hasFx(m.aFx) ? { aFx: cleanFx(m.aFx!, 0, aEnd) } : {}),
+    ...(hasFx(m.bFx) ? { bFx: cleanFx(m.bFx!, 0, Math.max(0, (bDur || 600000) - bOffset)) } : {}),
   };
 }
 

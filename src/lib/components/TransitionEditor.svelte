@@ -14,7 +14,23 @@
   import { output } from "../output.svelte";
   import { player } from "../player.svelte";
   import { settings } from "../settings.svelte";
-  import { clampMix, gainA, gainB, mixEnd, transitions, withPoints, type Mix, type PairMode, type Point } from "../transitions.svelte";
+  import { graph } from "../audiograph";
+  import {
+    clampMix,
+    FX_NAMES,
+    fxA,
+    fxB,
+    gainA,
+    gainB,
+    hasFx,
+    mixEnd,
+    transitions,
+    withPoints,
+    type FxName,
+    type Mix,
+    type PairMode,
+    type Point,
+  } from "../transitions.svelte";
   import type { Track } from "../types";
   import { ui } from "../ui.svelte";
   import Icon from "./Icon.svelte";
@@ -60,13 +76,13 @@
   function makeCustom() {
     if (mode === "custom") return;
     const base = effective === "none" ? { ...noneMix, bStart: aDur - 200 } : shown;
-    draft = withPoints(clampMix({ ...base, aPoints: undefined, bPoints: undefined }, aDur, bDur));
+    draft = withPoints(clampMix({ ...base, aPoints: undefined, bPoints: undefined, aFx: undefined, bFx: undefined }, aDur, bDur));
     mode = "custom";
   }
 
   function edit(fn: (m: Mix) => Mix) {
     makeCustom();
-    draft = clampMix(fn({ ...draft, aPoints: draft.aPoints?.map((p) => ({ ...p })), bPoints: draft.bPoints?.map((p) => ({ ...p })) }), aDur, bDur);
+    draft = clampMix(fn(structuredClone($state.snapshot(draft)) as Mix), aDur, bDur);
   }
 
   // -------------------------------------------------------- waveforms --
@@ -153,6 +169,49 @@
   const pathA = $derived(wavePath(peaksA, 0, aDur, A_TOP));
   const pathB = $derived(wavePath(peaksB, bFrom, bDur, B_TOP));
 
+  // ----------------------------------------------- volume & effect lines --
+  type Param = "vol" | FxName;
+  const PARAMS: { v: Param; label: string; color: string; hint: string }[] = [
+    { v: "vol", label: "Volume", color: "#f2c94c", hint: "How loud each song is" },
+    { v: "damp", label: "Dampen", color: "#6fb6ff", hint: "Muffles the sound, like through a wall (low-pass filter)" },
+    { v: "bass", label: "Bass", color: "#ff8a5c", hint: "Low end, up to ±12 dB (middle = unchanged)" },
+    { v: "treble", label: "Treble", color: "#c792ff", hint: "Highs, up to ±12 dB (middle = unchanged)" },
+  ];
+  let param = $state<Param>("vol");
+  const paramInfo = $derived(PARAMS.find((p) => p.v === param)!);
+
+  /** The points of one line on one song (undefined: the line isn't drawn yet). */
+  function listOf(m: Mix, lane: "a" | "b", p: Param = param): Point[] | undefined {
+    if (p === "vol") return lane === "a" ? m.aPoints : m.bPoints;
+    return (lane === "a" ? m.aFx : m.bFx)?.[p];
+  }
+  function setList(m: Mix, lane: "a" | "b", pts: Point[] | undefined, p: Param = param) {
+    if (p === "vol") {
+      if (lane === "a") m.aPoints = pts;
+      else m.bPoints = pts;
+      return;
+    }
+    const fx = { ...((lane === "a" ? m.aFx : m.bFx) ?? {}) };
+    if (pts?.length) fx[p] = pts;
+    else delete fx[p];
+    if (lane === "a") m.aFx = fx;
+    else m.bFx = fx;
+  }
+  /** A line's value (0–1, as drawn) at A-time t. */
+  function valueAt(m: Mix, lane: "a" | "b", t: number, p: Param = param) {
+    if (p === "vol") return lane === "a" ? gainA(m, t) : gainB(m, t);
+    const fx = lane === "a" ? fxA(m, t) : fxB(m, t);
+    return p === "damp" ? fx.damp : fx[p] / 2 + 0.5;
+  }
+  /** How a value reads for the selected line. */
+  function label(g: number, p: Param = param) {
+    if (p === "vol") return `${Math.round(g * 100)}%`;
+    if (p === "damp") return g < 0.005 ? "off" : `${Math.round(g * 100)}%`;
+    const db = (g - 0.5) * 24;
+    return `${db > 0.05 ? "+" : ""}${db.toFixed(1)} dB`;
+  }
+  const effectsUsed = $derived(FX_NAMES.filter((n) => shown.aFx?.[n]?.length || shown.bFx?.[n]?.length));
+
   function envelope(fn: (m: Mix, t: number) => number, top: number, from: number, to: number) {
     const pts: string[] = [];
     const t0 = Math.max(v0, from);
@@ -165,8 +224,13 @@
     }
     return pts.join(" ");
   }
-  const envA = $derived(envelope(gainA, A_TOP, 0, shown.aEnd + 1));
-  const envB = $derived(envelope(gainB, B_TOP, shown.bStart, bFrom + bDur));
+  const lines = $derived(
+    PARAMS.filter((p) => p.v === param || p.v === "vol" || effectsUsed.includes(p.v as FxName)).map((p) => ({
+      ...p,
+      a: envelope((m, t) => valueAt(m, "a", t, p.v), A_TOP, 0, shown.aEnd + 1),
+      b: envelope((m, t) => valueAt(m, "b", t, p.v), B_TOP, shown.bStart, bFrom + bDur),
+    })),
+  );
 
   const fmt = (ms: number) => {
     const neg = ms < 0;
@@ -196,22 +260,21 @@
   let selected = $state<{ lane: "a" | "b"; i: number } | null>(null);
   const sel = $derived.by(() => {
     if (!selected || !custom) return null;
-    const p = (selected.lane === "a" ? draft.aPoints : draft.bPoints)?.[selected.i];
+    const p = listOf(draft, selected.lane)?.[selected.i];
     return p ? { ...selected, p } : null;
   });
 
   function addPoint(lane: "a" | "b", t: number, g: number) {
     remember();
     edit((m) => {
-      const pts = (lane === "a" ? m.aPoints : m.bPoints) ?? [];
+      const pts = listOf(m, lane) ?? [];
       const at = lane === "a" ? t : t - m.bStart;
       pts.push({ t: at, g });
       pts.sort((p, q) => p.t - q.t);
-      if (lane === "a") m.aPoints = pts;
-      else m.bPoints = pts;
+      setList(m, lane, pts);
       return m;
     });
-    const list = (lane === "a" ? draft.aPoints : draft.bPoints) ?? [];
+    const list = listOf(draft, lane) ?? [];
     const target = lane === "a" ? t : t - draft.bStart;
     let best = 0;
     list.forEach((p, i) => {
@@ -221,11 +284,13 @@
   }
 
   function removePoint(lane: "a" | "b", i: number) {
-    const list = lane === "a" ? draft.aPoints : draft.bPoints;
-    if (!list || list.length <= 1) return; // keep at least one point per song
+    const list = listOf(draft, lane);
+    if (!list || (param === "vol" && list.length <= 1)) return; // a song keeps at least one volume point
     remember();
     edit((m) => {
-      (lane === "a" ? m.aPoints : m.bPoints)!.splice(i, 1);
+      const pts = listOf(m, lane)!;
+      pts.splice(i, 1);
+      setList(m, lane, pts.length ? pts : undefined);
       return m;
     });
     selected = null;
@@ -233,7 +298,7 @@
 
   function setPoint(lane: "a" | "b", i: number, p: Point) {
     edit((m) => {
-      const list = (lane === "a" ? m.aPoints : m.bPoints)!;
+      const list = listOf(m, lane)!;
       const lo = i > 0 ? list[i - 1].t : lane === "a" ? 0 : 0;
       const hi = i < list.length - 1 ? list[i + 1].t : lane === "a" ? m.aEnd : bDur - m.bOffset;
       list[i] = { t: Math.min(hi, Math.max(lo, p.t)), g: Math.min(1, Math.max(0, p.g)) };
@@ -285,7 +350,7 @@
     if (e.button !== 0) return;
     svgEl!.setPointerCapture(e.pointerId);
     selected = { lane, i };
-    const p = (lane === "a" ? draft.aPoints : draft.bPoints)![i];
+    const p = listOf(draft, lane)![i];
     remember();
     drag = { kind: "point", lane, i, x0: e.clientX, y0: e.clientY, p: { ...p } };
   }
@@ -399,8 +464,11 @@
   function stopAudio() {
     clearInterval(timer);
     timer = undefined;
-    pa?.pause();
-    pb?.pause();
+    for (const el of [pa, pb]) {
+      if (!el) continue;
+      el.pause();
+      graph.release(el);
+    }
     pa = pb = null;
   }
 
@@ -428,23 +496,30 @@
     if (player.playing) await player.toggle();
     const m = $state.snapshot(shown) as Mix;
     const vol = settings.value.volume ** 2;
-    const A = new Audio(mediaSrc(a.path));
-    const B = new Audio(mediaSrc(b.path));
+    const A = new Audio();
+    const B = new Audio();
+    for (const [el, t] of [[A, a], [B, b]] as const) {
+      el.crossOrigin = "anonymous"; // so the effects can process it
+      el.src = mediaSrc(t.path);
+      output.attach(el);
+    }
     pa = A;
     pb = B;
-    for (const el of [A, B]) output.attach(el);
+    const fxOn = hasFx(m.aFx) || hasFx(m.bFx);
     playing = true;
     let aOn = from < m.aEnd;
     let bOn = false;
     const startB = (t: number) => {
       bOn = true;
       B.currentTime = (m.bOffset + Math.max(0, t - m.bStart)) / 1000;
-      B.volume = Math.min(1, vol * gainB(m, t));
+      graph.setVolume(B, vol * gainB(m, t));
+      if (fxOn) graph.setFx(B, fxB(m, t));
       B.play().catch(() => {});
     };
     if (aOn) {
       A.currentTime = from / 1000;
-      A.volume = Math.min(1, vol * gainA(m, from));
+      graph.setVolume(A, vol * gainA(m, from));
+      if (fxOn) graph.setFx(A, fxA(m, from));
       A.play().catch(() => {});
     }
     if (from >= m.bStart) startB(from);
@@ -461,8 +536,14 @@
         A.pause();
       }
       if (!bOn && t >= m.bStart) startB(t);
-      if (aOn) A.volume = Math.min(1, vol * gainA(m, aT));
-      if (bOn) B.volume = Math.min(1, vol * gainB(m, t));
+      if (aOn) {
+        graph.setVolume(A, vol * gainA(m, aT));
+        if (fxOn) graph.setFx(A, fxA(m, aT));
+      }
+      if (bOn) {
+        graph.setVolume(B, vol * gainB(m, t));
+        if (fxOn) graph.setFx(B, fxB(m, t));
+      }
       head = t;
       // Keep the playhead in view.
       if (t > v0 + span * 0.92 || t < v0) v0 = Math.min(Math.max(-2000, t - span * 0.1), extent + 2000 - span);
@@ -569,6 +650,23 @@
     <button class="btn sm" onclick={fitAll} title="Show both whole songs">Whole songs</button>
   </div>
 
+  <div class="params" role="radiogroup" aria-label="Line to edit">
+    <span class="plabel">Edit</span>
+    {#each PARAMS as p (p.v)}
+      <button role="radio" aria-checked={param === p.v} class:on={param === p.v} title={p.hint}
+        onclick={() => { param = p.v; selected = null; }}>
+        <i style:background={p.color}></i>{p.label}
+        {#if p.v !== "vol" && effectsUsed.includes(p.v as FxName)}<small>on</small>{/if}
+      </button>
+    {/each}
+    {#if param !== "vol" && custom && (listOf(draft, "a")?.length || listOf(draft, "b")?.length)}
+      <button class="btn sm clear" onclick={() => { remember(); edit((m) => { setList(m, "a", undefined); setList(m, "b", undefined); return m; }); selected = null; }}>
+        <Icon name="x" size={13} /> Remove {paramInfo.label.toLowerCase()}
+      </button>
+    {/if}
+    <span class="phint">{paramInfo.hint}</span>
+  </div>
+
   <div class="stage" bind:clientWidth={W}>
     <svg
       bind:this={svgEl}
@@ -616,18 +714,21 @@
         <line class="mark" x1={x(shown.bStart)} x2={x(shown.bStart)} y1={A_TOP} y2={B_TOP + LANE} />
         <line class="mark end" x1={x(aDur)} x2={x(aDur)} y1={A_TOP} y2={A_TOP + LANE} />
 
-        <!-- volume lines -->
-        <polyline class="env" points={envA} />
-        <polyline class="env" points={envB} />
+        <!-- volume and effect lines; the selected one is bright and editable -->
+        {#each lines as l (l.v)}
+          <polyline class="env" class:faint={l.v !== param} stroke={l.color} points={l.a} />
+          <polyline class="env" class:faint={l.v !== param} stroke={l.color} points={l.b} />
+        {/each}
 
         {#if custom}
           <g class="pts">
-            {#each draft.aPoints ?? [] as p, i (i)}
+            {#each listOf(draft, "a") ?? [] as p, i (param + i)}
               <circle
                 role="slider"
                 tabindex="0"
-                aria-label={`Song A volume point at ${fmt(p.t)}`}
+                aria-label={`Song A ${paramInfo.label.toLowerCase()} point at ${fmt(p.t)}`}
                 aria-valuenow={Math.round(p.g * 100)}
+                fill={paramInfo.color}
                 class:on={sel?.lane === "a" && sel.i === i}
                 cx={x(p.t)}
                 cy={yOf(p.g, A_TOP)}
@@ -637,12 +738,13 @@
                 oncontextmenu={(e) => (e.preventDefault(), removePoint("a", i))}
               />
             {/each}
-            {#each draft.bPoints ?? [] as p, i (i)}
+            {#each listOf(draft, "b") ?? [] as p, i (param + i)}
               <circle
                 role="slider"
                 tabindex="0"
-                aria-label={`Song B volume point at ${fmt(p.t + draft.bOffset)}`}
+                aria-label={`Song B ${paramInfo.label.toLowerCase()} point at ${fmt(p.t + draft.bOffset)}`}
                 aria-valuenow={Math.round(p.g * 100)}
+                fill={paramInfo.color}
                 class:on={sel?.lane === "b" && sel.i === i}
                 cx={x(draft.bStart + p.t)}
                 cy={yOf(p.g, B_TOP)}
@@ -727,7 +829,7 @@
       {#if sel}
         <span class="ptitle">Point on song {sel.lane.toUpperCase()} at {fmt(sel.lane === "a" ? sel.p.t : sel.p.t + draft.bOffset)}</span>
         <label class="pvol">
-          Volume <b>{Math.round(sel.p.g * 100)}%</b>
+          {paramInfo.label} <b>{label(sel.p.g)}</b>
           <input type="range" min="0" max="1" step="0.01" value={sel.p.g}
             onpointerdown={remember} onkeydown={remember}
             oninput={(e) => setPoint(sel.lane, sel.i, { t: sel.p.t, g: +e.currentTarget.value })} />
@@ -735,7 +837,7 @@
         <button class="btn sm" onclick={() => removePoint(sel.lane, sel.i)}><Icon name="trash" size={14} /> Remove point</button>
       {:else}
         <span class="hint">
-          <b>Double-click</b> a yellow volume line to add a point · drag points to change time and volume · <b>right-click</b> a point to remove it ·
+          <b>Double-click</b> the {paramInfo.label.toLowerCase()} line to add a point · drag points to change time and volume · <b>right-click</b> a point to remove it ·
           click the ruler or a song to move the playhead · <b>Space</b> plays from there · scroll to move, <b>Ctrl+scroll</b> to zoom
         </span>
       {/if}
@@ -919,12 +1021,54 @@
   }
   .env {
     fill: none;
-    stroke: #f2c94c;
     stroke-width: 2;
     pointer-events: none;
   }
+  .env.faint {
+    opacity: 0.35;
+    stroke-width: 1.5;
+    stroke-dasharray: 5 4;
+  }
+  .params {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .plabel {
+    color: var(--ink-3);
+    margin-right: 2px;
+  }
+  .params button[role="radio"] {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 11px;
+    border-radius: var(--r-pill);
+    background: var(--well);
+    border: 1px solid var(--line);
+  }
+  .params button.on {
+    border-color: var(--accent);
+    background: rgb(var(--accent-rgb) / 0.12);
+  }
+  .params i {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+  }
+  .params small {
+    font-size: 10.5px;
+    color: var(--accent);
+  }
+  .phint {
+    color: var(--ink-3);
+    font-size: 12px;
+    margin-left: 6px;
+  }
   .pts circle {
-    fill: #f2c94c;
     stroke: var(--night-2);
     stroke-width: 2;
     cursor: move;
@@ -1028,6 +1172,7 @@
     font-size: 13px;
   }
   .inspector {
+    min-height: 150px; /* the dialog doesn't jump when a point gets selected */
     display: flex;
     flex-direction: column;
     gap: 10px;

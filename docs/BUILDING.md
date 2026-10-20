@@ -180,6 +180,7 @@ The key is then built into the app, and Profile → Last.fm shows only **Connect
 src/                         Svelte UI
   App.svelte                 window shell, routing, shortcuts
   lib/player.svelte.ts       queue + transport (on Android it drives the native player)
+  lib/audiograph.ts          Web Audio path (dampen / bass / treble / volume → analyser) for effects and the visualizer
   lib/transitions.svelte.ts  song-to-song transitions (None / Smooth / custom mixes); engines/local.ts plays them on two decks
   lib/components/TransitionEditor.svelte  the transition editor
   lib/output.svelte.ts       audio output device choice (Windows: setSinkId, Android: native)

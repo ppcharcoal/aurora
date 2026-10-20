@@ -1,6 +1,6 @@
 import type { PluginListener } from "@tauri-apps/api/core";
 import { native } from "./native";
-import { output } from "./output.svelte";
+import { graph } from "./audiograph";
 import { isAndroid } from "./platform";
 
 /** Number of frequency bands, low to high (40 Hz – 16 kHz, log scale). */
@@ -33,8 +33,6 @@ class Spectrum {
   private raw = new Float32Array(BANDS);
   private els: HTMLMediaElement[] = [];
   private ctx?: AudioContext;
-  private gain?: GainNode;
-  private muted = false;
   private analyser?: AnalyserNode;
   private bins?: Uint8Array<ArrayBuffer>;
   private users = 0;
@@ -48,15 +46,14 @@ class Spectrum {
     if (!this.els.includes(el)) this.els.push(el);
   }
 
-  /** True once the element feeds the analyser (it must then stay CORS-clean). */
+  /** True once the player's elements feed the analyser (they must then stay CORS-clean). */
   get hooked() {
-    return !!this.ctx;
+    return this.els.some((e) => graph.has(e));
   }
 
   /** Silences the speakers but keeps the levels (Discord-only playback). */
   setMuted(muted: boolean) {
-    this.muted = muted;
-    if (this.gain) this.gain.gain.value = muted ? 0 : 1;
+    graph.setMuted(muted, this.els);
   }
 
   /** The element couldn't load with CORS: the desktop visualizer can't hear it. */
@@ -76,35 +73,13 @@ class Spectrum {
       return;
     }
     if (!this.els.length || this.unavailable) return;
-    if (!this.ctx) {
-      try {
-        const ctx = new AudioContext({ latencyHint: "playback" });
-        const an = ctx.createAnalyser();
-        an.fftSize = 4096;
-        an.smoothingTimeConstant = 0.55;
-        an.minDecibels = -88;
-        an.maxDecibels = -22;
-        const gain = ctx.createGain();
-        // The elements may have been muted for Discord: mute after the analyser instead.
-        this.muted = this.muted || this.els.some((e) => e.muted);
-        for (const el of this.els) {
-          el.muted = false;
-          ctx.createMediaElementSource(el).connect(an);
-        }
-        gain.gain.value = this.muted ? 0 : 1;
-        an.connect(gain);
-        gain.connect(ctx.destination);
-        this.gain = gain;
-        this.ctx = ctx;
-        this.analyser = an;
-        this.bins = new Uint8Array(an.frequencyBinCount);
-        output.attach(ctx);
-      } catch {
-        this.unavailable = "The visualizer couldn't start on this PC.";
-        return;
-      }
+    if (!(await graph.listen(this.els))) {
+      this.unavailable = "The visualizer couldn't start on this PC.";
+      return;
     }
-    await this.ctx.resume().catch(() => {});
+    this.ctx = graph.ctx;
+    this.analyser = graph.analyser;
+    this.bins = new Uint8Array(this.analyser!.frequencyBinCount);
   }
 
   stop() {

@@ -1,7 +1,8 @@
 import { mediaSrc } from "../media";
 import { output } from "../output.svelte";
 import { spectrum } from "../spectrum";
-import { gainA, gainB, mixEnd, type Mix } from "../transitions.svelte";
+import { fxA, fxB, gainA, gainB, hasFx, mixEnd, type Mix } from "../transitions.svelte";
+import { graph, NEUTRAL } from "../audiograph";
 import type { Track } from "../types";
 
 export interface EngineEvents {
@@ -77,7 +78,7 @@ export class LocalEngine {
       if (!src) return;
       // Safety net: if a file only failed because of CORS mode, play it without
       // (the visualizer then can't read it). A missing file still answers, so it's reported.
-      if (a.crossOrigin && !spectrum.hooked) {
+      if (a.crossOrigin && !graph.has(a)) {
         const corsFailed = await fetch(src, { method: "HEAD" }).then(
           () => false,
           () => true,
@@ -108,24 +109,24 @@ export class LocalEngine {
     const base = this.applied(this.volume);
     const r = this.running;
     if (!r) {
-      this.a.volume = base;
+      graph.setVolume(this.a, base);
       return;
     }
     const bT = r.mix.bStart + (r.inc.currentTime * 1000 - r.mix.bOffset);
-    if (!r.outDone) r.out.volume = Math.min(1, base * gainA(r.mix, r.out.currentTime * 1000));
-    r.inc.volume = Math.min(1, base * gainB(r.mix, bT));
+    if (!r.outDone) graph.setVolume(r.out, Math.min(1, base * gainA(r.mix, r.out.currentTime * 1000)));
+    graph.setVolume(r.inc, Math.min(1, base * gainB(r.mix, bT)));
   }
 
   private fade(to: number): Promise<void> {
     cancelAnimationFrame(this.fadeRaf);
     this.fadeRaf = 0;
     const a = this.a;
-    const from = a.volume;
+    const from = graph.volumeOf(a);
     const start = performance.now();
     return new Promise((resolve) => {
       const step = (now: number) => {
         const k = Math.min(1, (now - start) / FADE_MS);
-        a.volume = from + (to - from) * k;
+        graph.setVolume(a, from + (to - from) * k);
         if (k < 1) this.fadeRaf = requestAnimationFrame(step);
         else {
           this.fadeRaf = 0;
@@ -177,12 +178,13 @@ export class LocalEngine {
     const a = this.a;
     if (!n || a.paused) return this.syncTimer();
     const t = a.currentTime * 1000;
-    // Volume points drawn before B comes in (custom transitions) shape A already.
-    if (n.mix.aPoints?.length && !this.fadeRaf) a.volume = Math.min(1, this.applied(this.volume) * gainA(n.mix, t));
+    // Effects and volume points drawn before B comes in (custom transitions) shape A already.
+    if (hasFx(n.mix.aFx)) graph.setFx(a, fxA(n.mix, t));
+    if (n.mix.aPoints?.length && !this.fadeRaf) graph.setVolume(a, Math.min(1, this.applied(this.volume) * gainA(n.mix, t)));
     if (this.preloaded !== n.track.path && t >= n.mix.bStart - PRELOAD_MS) {
       const b = this.b;
       b.pause();
-      b.volume = 0;
+      graph.setVolume(b, 0);
       b.src = mediaSrc(n.track.path);
       b.currentTime = n.mix.bOffset / 1000;
       b.load();
@@ -196,7 +198,7 @@ export class LocalEngine {
     const out = this.a;
     const inc = this.b;
     if (this.preloaded !== n.track.path) inc.src = mediaSrc(n.track.path);
-    inc.volume = 0;
+    graph.setVolume(inc, 0);
     inc.muted = out.muted;
     inc.currentTime = (n.mix.bOffset + Math.max(0, t - n.mix.bStart)) / 1000;
     this.running = { out, inc, mix: n.mix, outDone: false };
@@ -212,6 +214,8 @@ export class LocalEngine {
     const r = this.running!;
     this.applyVolumes();
     const aT = r.out.currentTime * 1000;
+    if (hasFx(r.mix.aFx) && !r.outDone) graph.setFx(r.out, fxA(r.mix, aT));
+    if (hasFx(r.mix.bFx)) graph.setFx(r.inc, fxB(r.mix, r.mix.bStart + (r.inc.currentTime * 1000 - r.mix.bOffset)));
     if (!r.outDone && (aT >= r.mix.aEnd || r.out.ended)) {
       r.outDone = true;
       r.out.pause();
@@ -226,6 +230,8 @@ export class LocalEngine {
     if (!r) return;
     this.running = null;
     r.out.pause();
+    graph.setFx(r.out, NEUTRAL);
+    graph.setFx(r.inc, NEUTRAL);
     this.clearDeck(r.out);
     this.applyVolumes();
     this.syncTimer();
@@ -241,8 +247,9 @@ export class LocalEngine {
     this.switching = true;
     this.clearDeck(this.b);
     const a = this.a;
+    for (const d of this.decks) graph.setFx(d, NEUTRAL);
     a.src = mediaSrc(track.path);
-    a.volume = this.applied(this.volume);
+    graph.setVolume(a, this.applied(this.volume));
     this.switching = false;
     if (autoplay) await a.play();
     this.syncTimer();
@@ -255,7 +262,7 @@ export class LocalEngine {
       this.syncTimer();
       return;
     }
-    this.a.volume = 0;
+    graph.setVolume(this.a, 0);
     await this.a.play();
     this.syncTimer();
     await this.fade(this.applied(this.volume));
@@ -287,11 +294,7 @@ export class LocalEngine {
 
   /** Mutes this computer's output only; the visualizer still sees the music. */
   setMuted(muted: boolean) {
-    for (const d of this.decks) {
-      if (spectrum.hooked) d.muted = false;
-      else d.muted = muted;
-    }
-    if (spectrum.hooked) spectrum.setMuted(muted);
+    graph.setMuted(muted, this.decks);
   }
 
   position() {
