@@ -1,8 +1,12 @@
 <script lang="ts">
-  // The transition editor (desktop): song A's ending on top, song B's start
-  // below, on one time line. Drag B to choose where it comes in, drag the
-  // yellow volume points to shape the fades, then preview and save.
-  // Only Aurora's own transition settings change; the music files are never edited.
+  // The transition editor (desktop). Both whole songs on one timeline: song A
+  // on top, song B below, placed where it comes in. Like a small audio editor:
+  //  - click or drag on the time ruler (or click a waveform) to place the playhead, Space plays from there;
+  //  - drag song B sideways to choose where it comes in, the bar on A to choose where A stops;
+  //  - the yellow lines are the volumes: double-click a line to add a point, drag points,
+  //    double-click / right-click / Delete to remove one;
+  //  - scroll to move along, Ctrl+scroll (or the zoom slider) to zoom; Ctrl+Z undoes.
+  // Only Aurora's transition settings change; the music files are never edited.
   import { invoke } from "@tauri-apps/api/core";
   import { onDestroy, onMount, untrack } from "svelte";
   import { fade, scale } from "svelte/transition";
@@ -10,7 +14,7 @@
   import { output } from "../output.svelte";
   import { player } from "../player.svelte";
   import { settings } from "../settings.svelte";
-  import { clampMix, gainA, gainB, transitions, type Mix, type PairMode } from "../transitions.svelte";
+  import { clampMix, gainA, gainB, mixEnd, transitions, withPoints, type Mix, type PairMode, type Point } from "../transitions.svelte";
   import type { Track } from "../types";
   import { ui } from "../ui.svelte";
   import Icon from "./Icon.svelte";
@@ -18,42 +22,68 @@
   let props: { a: Track; b: Track } = $props();
   // The dialog is opened anew for each pair (keyed in App.svelte): plain copies are fine.
   const { a, b } = untrack(() => ({ a: props.a, b: props.b }));
+  const aDur = a.durationMs;
+  const bDur = b.durationMs;
 
   const existing = transitions.pair(a, b);
-  /** "default" = follow the setting in Settings → Playback. */
   let mode = $state<PairMode | "default">(existing?.mode ?? "default");
-  let draft = $state<Mix>(existing?.mix ? clampMix(existing.mix, a.durationMs, b.durationMs) : transitions.smoothMix(a, b));
+  let draft = $state<Mix>(withPoints(clampMix(existing?.mix ?? transitions.smoothMix(a, b), aDur, bDur)));
   let smooth = $state<Mix>(transitions.smoothMix(a, b));
+  const noneMix: Mix = { bStart: aDur, aEnd: aDur, bOffset: 0, fadeOut: 0, fadeIn: 0, aGain: 1, bGain: 1, curve: "linear" };
 
   const effective = $derived<PairMode>(mode === "default" ? transitions.value.mode : mode);
-  /** What the canvas shows: the custom draft, the Smooth plan, or B straight after A. */
-  const shown = $derived<Mix>(
-    effective === "custom"
-      ? draft
-      : effective === "smooth"
-        ? smooth
-        : { bStart: a.durationMs, aEnd: a.durationMs, bOffset: 0, fadeOut: 0, fadeIn: 0, aGain: 1, bGain: 1, curve: "linear" },
-  );
+  const custom = $derived(effective === "custom");
+  const shown = $derived<Mix>(custom ? draft : effective === "smooth" ? smooth : noneMix);
 
-  // ------------------------------------------------------- waveforms --
-  const WIN = 45000;
-  const aWin = Math.max(0, a.durationMs - WIN);
-  const bWin = Math.min(b.durationMs, WIN);
-  const POINTS = 900;
+  // ------------------------------------------------------------- undo --
+  let undoStack = $state<string[]>([]);
+  let redoStack = $state<string[]>([]);
+  /** Call once at the start of each change (a drag, a slider move…). */
+  function remember() {
+    undoStack = [...undoStack.slice(-80), JSON.stringify({ mode, draft })];
+    redoStack = [];
+  }
+  function restore(from: string[], to: string[]) {
+    const last = from.at(-1);
+    if (!last) return [from, to];
+    const now = JSON.stringify({ mode, draft });
+    const s = JSON.parse(last) as { mode: typeof mode; draft: Mix };
+    mode = s.mode;
+    draft = s.draft;
+    selected = null;
+    return [from.slice(0, -1), [...to, now]];
+  }
+  const undo = () => ([undoStack, redoStack] = restore(undoStack, redoStack));
+  const redo = () => ([redoStack, undoStack] = restore(redoStack, undoStack));
+
+  /** Editing anything makes this pair's transition a custom one, starting from what's shown. */
+  function makeCustom() {
+    if (mode === "custom") return;
+    const base = effective === "none" ? { ...noneMix, bStart: aDur - 200 } : shown;
+    draft = withPoints(clampMix({ ...base, aPoints: undefined, bPoints: undefined }, aDur, bDur));
+    mode = "custom";
+  }
+
+  function edit(fn: (m: Mix) => Mix) {
+    makeCustom();
+    draft = clampMix(fn({ ...draft, aPoints: draft.aPoints?.map((p) => ({ ...p })), bPoints: draft.bPoints?.map((p) => ({ ...p })) }), aDur, bDur);
+  }
+
+  // -------------------------------------------------------- waveforms --
+  const count = (dur: number) => Math.round(Math.min(4000, Math.max(400, dur / 40)));
   let peaksA = $state<number[] | null>(null);
   let peaksB = $state<number[] | null>(null);
   let waveError = $state("");
 
   onMount(async () => {
-    // Start from the analysed Smooth plan (silence trimmed).
     const [ba, bb] = await Promise.all([transitions.boundsOf(a), transitions.boundsOf(b)]);
     smooth = transitions.smoothMix(a, b, ba, bb);
-    if (!existing?.mix) draft = { ...smooth };
-    center = defaultCenter();
+    if (!existing?.mix) draft = withPoints(clampMix(smooth, aDur, bDur));
+    fitTransition();
     try {
       const [pa, pb] = await Promise.all([
-        invoke<number[]>("audio_peaks", { path: a.path, startMs: Math.round(aWin), durMs: Math.round(a.durationMs - aWin), points: POINTS }),
-        invoke<number[]>("audio_peaks", { path: b.path, startMs: 0, durMs: Math.round(bWin), points: POINTS }),
+        invoke<number[]>("audio_peaks", { path: a.path, startMs: 0, durMs: Math.round(aDur), points: count(aDur) }),
+        invoke<number[]>("audio_peaks", { path: b.path, startMs: 0, durMs: Math.round(bDur), points: count(bDur) }),
       ]);
       peaksA = pa;
       peaksB = pb;
@@ -63,158 +93,347 @@
   });
 
   // ------------------------------------------------------------ view --
-  const spans = [10000, 20000, 40000];
-  let span = $state(20000);
-  const defaultCenter = () => (shown.bStart + Math.max(shown.aEnd, shown.bStart + shown.fadeIn)) / 2;
-  let center = $state(0);
-  center = defaultCenter();
-  const v0 = $derived(center - span / 2);
-  let W = $state(800);
-  const LANE = 96;
+  let W = $state(820);
+  const RULER = 26;
+  const LANE = 110;
+  const GAP = 14;
+  const A_TOP = RULER;
+  const B_TOP = RULER + LANE + GAP;
+  const OV_TOP = B_TOP + LANE + 12;
+  const OV_H = 22;
+  const H = OV_TOP + OV_H;
+
+  /** B's whole song on the shared timeline. */
+  const bFrom = $derived(shown.bStart - shown.bOffset);
+  const extent = $derived(Math.max(aDur, bFrom + bDur));
+  let v0 = $state(0);
+  let span = $state(30000);
+  const MIN_SPAN = 2000;
+
+  function setView(start: number, len: number) {
+    span = Math.min(Math.max(MIN_SPAN, len), extent + 4000);
+    v0 = Math.min(Math.max(-2000, start), extent + 2000 - span);
+  }
+  function fitTransition() {
+    const m = shown;
+    const end = mixEnd(m);
+    const len = Math.max(12000, end - m.bStart + 16000);
+    setView(m.bStart - (len - (end - m.bStart)) / 2, len);
+  }
+  const fitAll = () => setView(-1000, extent + 2000);
+  function zoomBy(f: number, at = v0 + span / 2) {
+    const k = (at - v0) / span;
+    const len = span * f;
+    setView(at - k * Math.min(Math.max(MIN_SPAN, len), extent + 4000), len);
+  }
+
   const x = (t: number) => ((t - v0) / span) * W;
   const tAt = (px: number) => v0 + (px / W) * span;
+  const yOf = (g: number, top: number) => top + 10 + (1 - g) * (LANE - 20);
+  const gAt = (py: number, top: number) => Math.min(1, Math.max(0, 1 - (py - top - 10) / (LANE - 20)));
 
-  function wavePath(peaks: number[], startT: number, stepT: number, top: number) {
+  function wavePath(peaks: number[] | null, start: number, dur: number, top: number) {
+    if (!peaks) return "";
+    const n = peaks.length;
+    const step = dur / n;
+    const i0 = Math.max(0, Math.floor((v0 - start) / step));
+    const i1 = Math.min(n, Math.ceil((v0 + span - start) / step) + 1);
+    const group = Math.max(1, Math.floor((i1 - i0) / (W / 2)));
     const mid = top + LANE / 2;
     let d = "";
-    for (let i = 0; i < peaks.length; i++) {
-      const px = x(startT + i * stepT);
-      if (px < -2 || px > W + 2) continue;
-      const h = Math.max(1, (peaks[i] / 255) * (LANE / 2 - 6));
-      d += `M${px.toFixed(1)} ${(mid - h).toFixed(1)}V${(mid + h).toFixed(1)}`;
+    for (let i = i0; i < i1; i += group) {
+      let p = 0;
+      for (let j = i; j < Math.min(i1, i + group); j++) p = Math.max(p, peaks[j]);
+      const px = x(start + (i + group / 2) * step).toFixed(1);
+      const h = Math.max(0.8, (p / 255) * (LANE / 2 - 8));
+      d += `M${px} ${(mid - h).toFixed(1)}V${(mid + h).toFixed(1)}`;
     }
     return d;
   }
-  const pathA = $derived(peaksA ? wavePath(peaksA, aWin, (a.durationMs - aWin) / POINTS, 0) : "");
-  const pathB = $derived(peaksB ? wavePath(peaksB, shown.bStart - shown.bOffset, bWin / POINTS, LANE + 18) : "");
+  const pathA = $derived(wavePath(peaksA, 0, aDur, A_TOP));
+  const pathB = $derived(wavePath(peaksB, bFrom, bDur, B_TOP));
 
-  function envelope(fn: (m: Mix, t: number) => number, top: number) {
+  function envelope(fn: (m: Mix, t: number) => number, top: number, from: number, to: number) {
     const pts: string[] = [];
-    for (let i = 0; i <= 160; i++) {
-      const t = v0 + (i / 160) * span;
-      pts.push(`${x(t).toFixed(1)},${(top + 8 + (1 - fn(shown, t)) * (LANE - 16)).toFixed(1)}`);
+    const t0 = Math.max(v0, from);
+    const t1 = Math.min(v0 + span, to);
+    if (t1 <= t0) return "";
+    const steps = Math.max(2, Math.round(((t1 - t0) / span) * (W / 3)));
+    for (let i = 0; i <= steps; i++) {
+      const t = t0 + ((t1 - t0) * i) / steps;
+      pts.push(`${x(t).toFixed(1)},${yOf(fn(shown, t), top).toFixed(1)}`);
     }
     return pts.join(" ");
   }
-  const envA = $derived(envelope(gainA, 0));
-  const envB = $derived(envelope(gainB, LANE + 18));
-  const yOf = (g: number, top: number) => top + 8 + (1 - g) * (LANE - 16);
+  const envA = $derived(envelope(gainA, A_TOP, 0, shown.aEnd + 1));
+  const envB = $derived(envelope(gainB, B_TOP, shown.bStart, bFrom + bDur));
 
-  const sec = (ms: number) => (ms / 1000).toFixed(1);
+  const fmt = (ms: number) => {
+    const neg = ms < 0;
+    const v = Math.abs(ms) / 1000;
+    const m = Math.floor(v / 60);
+    return `${neg ? "−" : ""}${m}:${(v - m * 60).toFixed(1).padStart(4, "0")}`;
+  };
   const ticks = $derived.by(() => {
-    const step = span <= 10000 ? 1000 : span <= 20000 ? 2000 : 5000;
+    const steps = [500, 1000, 2000, 5000, 10000, 15000, 30000, 60000, 120000];
+    const step = steps.find((s) => (s / span) * W >= 70) ?? 300000;
     const out: { px: number; label: string }[] = [];
     for (let t = Math.ceil(v0 / step) * step; t <= v0 + span; t += step) {
-      const left = (a.durationMs - t) / 1000;
-      if (x(t) < 16 || x(t) > W - 16) continue; // labels at the very edge would be cut off
-      out.push({ px: x(t), label: left > 0.05 ? `−${left.toFixed(0)}s` : left < -0.05 ? `+${(-left).toFixed(0)}s` : "end" });
+      const px = x(t);
+      if (px < 18 || px > W - 18) continue;
+      out.push({ px, label: fmt(t).replace(/\.0$/, "") });
     }
     return out;
   });
 
-  // ------------------------------------------------------------ drag --
-  type Grab = "b" | "aEnd" | "fadeOut" | "fadeIn" | "pan";
-  let grab: { what: Grab; x0: number; y0: number; m: Mix; c: number } | null = null;
+  // -------------------------------------------------------- playhead --
+  /** Playhead on A's timeline (ms). */
+  let head = $state(0);
+  untrack(() => (head = Math.max(0, shown.bStart - 5000)));
+  const bTimeAt = (t: number) => t - shown.bStart + shown.bOffset;
 
-  function down(what: Grab, e: PointerEvent) {
+  // ------------------------------------------------------ selection ---
+  let selected = $state<{ lane: "a" | "b"; i: number } | null>(null);
+  const sel = $derived.by(() => {
+    if (!selected || !custom) return null;
+    const p = (selected.lane === "a" ? draft.aPoints : draft.bPoints)?.[selected.i];
+    return p ? { ...selected, p } : null;
+  });
+
+  function addPoint(lane: "a" | "b", t: number, g: number) {
+    remember();
+    edit((m) => {
+      const pts = (lane === "a" ? m.aPoints : m.bPoints) ?? [];
+      const at = lane === "a" ? t : t - m.bStart;
+      pts.push({ t: at, g });
+      pts.sort((p, q) => p.t - q.t);
+      if (lane === "a") m.aPoints = pts;
+      else m.bPoints = pts;
+      return m;
+    });
+    const list = (lane === "a" ? draft.aPoints : draft.bPoints) ?? [];
+    const target = lane === "a" ? t : t - draft.bStart;
+    let best = 0;
+    list.forEach((p, i) => {
+      if (Math.abs(p.t - target) < Math.abs(list[best].t - target)) best = i;
+    });
+    selected = { lane, i: best };
+  }
+
+  function removePoint(lane: "a" | "b", i: number) {
+    const list = lane === "a" ? draft.aPoints : draft.bPoints;
+    if (!list || list.length <= 1) return; // keep at least one point per song
+    remember();
+    edit((m) => {
+      (lane === "a" ? m.aPoints : m.bPoints)!.splice(i, 1);
+      return m;
+    });
+    selected = null;
+  }
+
+  function setPoint(lane: "a" | "b", i: number, p: Point) {
+    edit((m) => {
+      const list = (lane === "a" ? m.aPoints : m.bPoints)!;
+      const lo = i > 0 ? list[i - 1].t : lane === "a" ? 0 : 0;
+      const hi = i < list.length - 1 ? list[i + 1].t : lane === "a" ? m.aEnd : bDur - m.bOffset;
+      list[i] = { t: Math.min(hi, Math.max(lo, p.t)), g: Math.min(1, Math.max(0, p.g)) };
+      return m;
+    });
+  }
+
+  // ------------------------------------------------------- pointers ---
+  type Drag =
+    | { kind: "bg"; x0: number; v: number; moved: boolean; lane: "a" | "b" | null }
+    | { kind: "scrub" }
+    | { kind: "b"; x0: number; start: number; moved: boolean }
+    | { kind: "aEnd"; x0: number; start: number }
+    | { kind: "point"; lane: "a" | "b"; i: number; x0: number; y0: number; p: Point }
+    | { kind: "overview" };
+  let drag: Drag | null = null;
+  let svgEl = $state<SVGSVGElement>();
+
+  const local = (e: PointerEvent | MouseEvent) => {
+    const r = svgEl!.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  };
+  const laneAt = (py: number) => (py >= A_TOP && py <= A_TOP + LANE ? "a" : py >= B_TOP && py <= B_TOP + LANE ? "b" : null);
+
+  function down(e: PointerEvent) {
+    if (e.button !== 0) return;
+    const { px, py } = local(e);
+    svgEl!.setPointerCapture(e.pointerId);
+    if (py < RULER) {
+      drag = { kind: "scrub" };
+      seek(tAt(px), false);
+    } else if (py >= OV_TOP) {
+      drag = { kind: "overview" };
+      moveOverview(px);
+    } else {
+      drag = { kind: "bg", x0: e.clientX, v: v0, moved: false, lane: laneAt(py) };
+    }
+  }
+
+  function downOn(kind: "b" | "aEnd", e: PointerEvent) {
+    if (e.button !== 0) return;
     e.stopPropagation();
-    if (what !== "pan") makeCustom();
-    grab = { what, x0: e.clientX, y0: e.clientY, m: { ...draft }, c: center };
-    (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+    svgEl!.setPointerCapture(e.pointerId);
+    drag = kind === "b" ? { kind, x0: e.clientX, start: shown.bStart, moved: false } : { kind, x0: e.clientX, start: shown.aEnd };
+  }
+
+  function downPoint(lane: "a" | "b", i: number, e: PointerEvent) {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    svgEl!.setPointerCapture(e.pointerId);
+    selected = { lane, i };
+    const p = (lane === "a" ? draft.aPoints : draft.bPoints)![i];
+    remember();
+    drag = { kind: "point", lane, i, x0: e.clientX, y0: e.clientY, p: { ...p } };
   }
 
   function move(e: PointerEvent) {
-    if (!grab) return;
-    const dt = ((e.clientX - grab.x0) / W) * span;
-    const dg = -(e.clientY - grab.y0) / (LANE - 16);
-    const m = { ...grab.m };
-    switch (grab.what) {
-      case "pan":
-        center = grab.c - dt;
+    if (!drag) return;
+    const { px } = local(e);
+    const dt = "x0" in drag ? ((e.clientX - drag.x0) / W) * span : 0;
+    switch (drag.kind) {
+      case "scrub":
+        return seek(tAt(px), false);
+      case "overview":
+        return moveOverview(px);
+      case "bg":
+        if (Math.abs(e.clientX - drag.x0) > 3) drag.moved = true;
+        if (drag.moved) v0 = Math.min(Math.max(-2000, drag.v - dt), extent + 2000 - span);
         return;
       case "b":
-        m.bStart = grab.m.bStart + dt;
-        break;
-      case "aEnd":
-        m.aEnd = Math.max(grab.m.aEnd + dt, m.bStart);
-        break;
-      case "fadeOut":
-        m.fadeOut = grab.m.fadeOut - dt;
-        m.aGain = grab.m.aGain + dg;
-        break;
-      case "fadeIn":
-        m.fadeIn = grab.m.fadeIn + dt;
-        m.bGain = grab.m.bGain + dg;
-        break;
+        if (!drag.moved && Math.abs(e.clientX - drag.x0) > 3) {
+          drag.moved = true;
+          remember();
+        }
+        if (drag.moved) {
+          const s = drag.start + dt;
+          edit((m) => ({ ...m, bStart: s, aEnd: Math.max(m.aEnd, s) }));
+        }
+        return;
+      case "aEnd": {
+        const s = drag.start + dt;
+        edit((m) => ({ ...m, aEnd: Math.max(s, m.bStart) }));
+        return;
+      }
+      case "point": {
+        const p = drag.p;
+        setPoint(drag.lane, drag.i, { t: p.t + dt, g: p.g - (e.clientY - drag.y0) / (LANE - 20) });
+        return;
+      }
     }
-    draft = clampMix(m, a.durationMs, b.durationMs);
   }
 
-  function up() {
-    grab = null;
+  function up(e: PointerEvent) {
+    const d = drag;
+    drag = null;
+    if (!d) return;
+    if (d.kind === "scrub" && playing) playFrom(head);
+    // A click (no drag) on a waveform puts the playhead there.
+    if ((d.kind === "bg" || d.kind === "b") && !d.moved) {
+      selected = null;
+      seek(tAt(local(e).px));
+    }
+  }
+
+  function startDragEnd(e: PointerEvent) {
+    remember();
+    downOn("aEnd", e);
+  }
+
+  function dbl(e: MouseEvent) {
+    const { px, py } = local(e);
+    const lane = laneAt(py);
+    if (!lane) return;
+    const top = lane === "a" ? A_TOP : B_TOP;
+    const t = tAt(px);
+    if (lane === "a" && t > shown.aEnd) return;
+    if (lane === "b" && (t < shown.bStart || t > bFrom + bDur)) return;
+    addPoint(lane, t, gAt(py, top));
   }
 
   function wheel(e: WheelEvent) {
     e.preventDefault();
-    center += ((e.deltaX || e.deltaY) / W) * span;
-  }
-
-  /** Editing anything makes this pair's transition a custom one (starting from what's shown). */
-  function makeCustom() {
-    if (mode !== "custom") {
-      draft = { ...shown, bStart: Math.min(shown.bStart, a.durationMs - 1000) };
-      draft = clampMix(draft, a.durationMs, b.durationMs);
-      mode = "custom";
+    if (e.ctrlKey || e.metaKey) {
+      zoomBy(e.deltaY > 0 ? 1.18 : 1 / 1.18, tAt(local(e).px));
+    } else {
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      v0 = Math.min(Math.max(-2000, v0 + (d / W) * span), extent + 2000 - span);
     }
   }
 
-  function setNum(k: keyof Mix, v: number) {
-    makeCustom();
-    const m = { ...draft, [k]: v };
-    if (k === "bStart") m.bStart = draft.aEnd - v; // the field is "overlap"
-    if (k === "aEnd") {
-      const overlap = draft.aEnd - draft.bStart;
-      m.aEnd = a.durationMs - v; // the field is "cut from A's end"
-      m.bStart = m.aEnd - overlap;
+  function moveOverview(px: number) {
+    const t = (px / W) * (extent + 2000) - 1000;
+    v0 = Math.min(Math.max(-2000, t - span / 2), extent + 2000 - span);
+  }
+  const ov = (t: number) => ((t + 1000) / (extent + 2000)) * W;
+
+  function key(e: KeyboardEvent) {
+    if (e.key === "Escape") return close();
+    const typing = (e.target as HTMLElement)?.tagName === "INPUT" && (e.target as HTMLInputElement).type !== "range";
+    if (typing) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      togglePlay();
+    } else if ((e.key === "Delete" || e.key === "Backspace") && sel) {
+      e.preventDefault();
+      removePoint(sel.lane, sel.i);
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
+      e.preventDefault();
+      redo();
     }
-    draft = clampMix(m, a.durationMs, b.durationMs);
   }
 
   // --------------------------------------------------------- preview --
   let playing = $state(false);
-  let playhead = $state<number | null>(null);
   let pa: HTMLAudioElement | null = null;
   let pb: HTMLAudioElement | null = null;
   let timer: ReturnType<typeof setInterval> | undefined;
 
-  function stopPreview() {
+  function stopAudio() {
     clearInterval(timer);
+    timer = undefined;
     pa?.pause();
     pb?.pause();
     pa = pb = null;
-    playing = false;
-    playhead = null;
   }
 
-  /**
-   * Plays exactly what the timeline shows, from its left edge to its right
-   * edge, with the current settings (also unsaved ones). A follows its own
-   * clock until it stops, then B's clock takes over.
-   */
-  async function preview() {
-    if (playing) return stopPreview();
+  function pause() {
+    stopAudio();
+    playing = false;
+  }
+
+  /** Moves the playhead; while playing, the music carries on from there (after a scrub, when it's let go). */
+  function seek(t: number, restart = true) {
+    head = Math.min(Math.max(0, t), extent);
+    if (playing && restart) playFrom(head);
+    else if (playing) stopAudio();
+  }
+
+  async function togglePlay() {
+    if (playing) return pause();
+    if (head >= extent - 50) head = Math.max(0, shown.bStart - 5000);
+    playFrom(head);
+  }
+
+  /** Plays both songs from `from` (A's timeline) with the settings on screen, until B ends or you stop. */
+  async function playFrom(from: number) {
+    stopAudio();
     if (player.playing) await player.toggle();
     const m = $state.snapshot(shown) as Mix;
     const vol = settings.value.volume ** 2;
-    const from = Math.max(0, v0);
-    const until = v0 + span; // the right edge of the view
     const A = new Audio(mediaSrc(a.path));
     const B = new Audio(mediaSrc(b.path));
     pa = A;
     pb = B;
     for (const el of [A, B]) output.attach(el);
     playing = true;
-    playhead = from;
     let aOn = from < m.aEnd;
     let bOn = false;
     const startB = (t: number) => {
@@ -226,10 +445,9 @@
     if (aOn) {
       A.currentTime = from / 1000;
       A.volume = Math.min(1, vol * gainA(m, from));
-      await A.play().catch(() => {});
+      A.play().catch(() => {});
     }
     if (from >= m.bStart) startB(from);
-    // Nothing of A in view and B not due yet: keep time with the system clock until B starts.
     const t0 = performance.now();
     timer = setInterval(() => {
       if (pa !== A) return;
@@ -245,12 +463,23 @@
       if (!bOn && t >= m.bStart) startB(t);
       if (aOn) A.volume = Math.min(1, vol * gainA(m, aT));
       if (bOn) B.volume = Math.min(1, vol * gainB(m, t));
-      playhead = t;
-      if (t >= until || (!aOn && bOn && B.ended)) stopPreview();
+      head = t;
+      // Keep the playhead in view.
+      if (t > v0 + span * 0.92 || t < v0) v0 = Math.min(Math.max(-2000, t - span * 0.1), extent + 2000 - span);
+      if ((bOn && B.ended) || t >= m.bStart - m.bOffset + bDur) pause();
     }, 30);
   }
 
-  /** Where the main player is in these two songs (shown as a faint line). */
+  // Changing the transition while it plays: carry on from the same spot with the new settings.
+  let restart: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    void JSON.stringify(shown);
+    if (!untrack(() => playing)) return;
+    clearTimeout(restart);
+    restart = setTimeout(() => playing && playFrom(head), 200);
+  });
+
+  /** Where the main player is in these two songs (dashed line). */
   const nowAt = $derived.by(() => {
     const c = player.current;
     if (!c || playing) return null;
@@ -259,11 +488,14 @@
     return null;
   });
 
-  onDestroy(stopPreview);
+  onDestroy(() => {
+    clearTimeout(restart);
+    stopAudio();
+  });
 
   // ------------------------------------------------------------ save --
   function save() {
-    stopPreview();
+    pause();
     if (mode === "default") transitions.setPair(a, b, null);
     else if (mode === "custom") transitions.setPair(a, b, { mode, mix: $state.snapshot(draft) as Mix });
     else transitions.setPair(a, b, { mode });
@@ -272,7 +504,7 @@
   }
 
   function close() {
-    stopPreview();
+    pause();
     ui.transitionEdit = null;
   }
 
@@ -282,133 +514,238 @@
     { v: "smooth", label: "Smooth", hint: "Trim silence, crossfade" },
     { v: "custom", label: "Custom", hint: "Your own mix below" },
   ];
+  function pickMode(v: PairMode | "default") {
+    remember();
+    if (v === "custom") makeCustom();
+    else mode = v;
+    selected = null;
+  }
+
+  const zoomLevel = $derived(Math.log(span / MIN_SPAN) / Math.log((extent + 4000) / MIN_SPAN));
 </script>
 
-<svelte:window onpointermove={move} onpointerup={up} onkeydown={(e) => e.key === "Escape" && close()} />
+<svelte:window onkeydown={key} />
 
 <div class="back" transition:fade={{ duration: 150 }} role="presentation" onpointerdown={close}></div>
-<div class="dlg" role="dialog" aria-label="Transition" transition:scale={{ start: 0.96, duration: 180 }}>
+<div class="dlg" role="dialog" aria-label="Transition editor" transition:scale={{ start: 0.96, duration: 180 }}>
   <header>
-    <h2>Transition</h2>
-    <p class="pair"><b>{a.title}</b> <span class="muted">{a.artist}</span> <Icon name="next" size={13} /> <b>{b.title}</b> <span class="muted">{b.artist}</span></p>
+    <div>
+      <h2>Transition editor</h2>
+      <p class="pair"><b>{a.title}</b> <span class="muted">{a.artist}</span> <Icon name="next" size={13} /> <b>{b.title}</b> <span class="muted">{b.artist}</span></p>
+    </div>
+    <button class="icon" onclick={close} aria-label="Close editor"><Icon name="x" size={16} /></button>
   </header>
 
   <div class="modes" role="radiogroup" aria-label="Transition type">
     {#each modes as m (m.v)}
-      <button role="radio" aria-checked={mode === m.v} class:on={mode === m.v} onclick={() => (m.v === "custom" ? makeCustom() : (mode = m.v))}>
-        {m.label}<small>{m.hint}</small>
-      </button>
+      <button role="radio" aria-checked={mode === m.v} class:on={mode === m.v} onclick={() => pickMode(m.v)}>{m.label}<small>{m.hint}</small></button>
     {/each}
   </div>
 
-  <div class="stage" bind:clientWidth={W}>
-    <svg width={W} height={LANE * 2 + 40} role="application" aria-label="Transition timeline" onpointerdown={(e) => down("pan", e)} onwheel={wheel}>
-      <!-- lanes -->
-      <rect class="lane" x="0" y="0" width={W} height={LANE} rx="12" />
-      <rect class="lane" x="0" y={LANE + 18} width={W} height={LANE} rx="12" />
-      <!-- A: waveform, the part after it stops greyed out -->
-      <clipPath id="clipA"><rect x="0" y="0" width={Math.max(0, Math.min(W, x(shown.aEnd)))} height={LANE} /></clipPath>
-      <path class="wave dim" d={pathA} />
-      <path class="wave a" d={pathA} clip-path="url(#clipA)" />
-      <!-- B: waveform, the skipped intro greyed out -->
-      <clipPath id="clipB"><rect x={Math.max(0, x(shown.bStart))} y={LANE + 18} width={W} height={LANE} /></clipPath>
-      <g class="bbody" role="button" tabindex="-1" aria-label="Song B: drag to move where it starts" onpointerdown={(e) => down("b", e)}>
-        <rect x={Math.max(0, x(shown.bStart - shown.bOffset))} y={LANE + 18} width={W} height={LANE} fill="transparent" />
-        <path class="wave dim" d={pathB} />
-        <path class="wave b" d={pathB} clip-path="url(#clipB)" />
-      </g>
-      {#if !peaksA && !waveError}
-        <text x={W / 2} y={LANE + 9} class="loading" text-anchor="middle">Reading the songs…</text>
-      {/if}
-      <!-- markers -->
-      <line class="mark" x1={x(shown.bStart)} x2={x(shown.bStart)} y1="0" y2={LANE * 2 + 18} />
-      <line class="mark end" x1={x(a.durationMs)} x2={x(a.durationMs)} y1="0" y2={LANE} />
-      <!-- volume lines -->
-      <polyline class="env" points={envA} />
-      <polyline class="env" points={envB} />
-      <!-- handles -->
-      <g class="handles">
-        <circle role="slider" tabindex="0" aria-label="Fade out start and song A volume" aria-valuenow={Math.round(shown.fadeOut)} cx={x(shown.aEnd - shown.fadeOut)} cy={yOf(shown.aGain, 0)} r="7" onpointerdown={(e) => down("fadeOut", e)} />
-        <rect role="slider" tabindex="0" aria-label="Where song A stops" aria-valuenow={Math.round(shown.aEnd)} x={x(shown.aEnd) - 5} y={LANE - 22} width="10" height="18" rx="3" onpointerdown={(e) => down("aEnd", e)} />
-        <circle role="slider" tabindex="0" aria-label="Fade in end and song B volume" aria-valuenow={Math.round(shown.fadeIn)} cx={x(shown.bStart + shown.fadeIn)} cy={yOf(shown.bGain, LANE + 18)} r="7" onpointerdown={(e) => down("fadeIn", e)} />
-      </g>
-      {#if nowAt !== null && nowAt >= v0 && nowAt <= v0 + span}
-        <line class="now" x1={x(nowAt)} x2={x(nowAt)} y1="0" y2={LANE * 2 + 18} />
-      {/if}
-      {#if playhead !== null}
-        <line class="head" x1={x(playhead)} x2={x(playhead)} y1="-2" y2={LANE * 2 + 20} />
-        <circle class="headknob" cx={x(playhead)} cy={LANE + 9} r="5" />
-      {/if}
-      <!-- time axis: time left in song A -->
-      {#each ticks as tk (tk.px)}
-        <text class="tick" x={tk.px} y={LANE * 2 + 34} text-anchor="middle">{tk.label}</text>
-      {/each}
-      <text class="lanelabel" x="10" y="18">A · {a.title}</text>
-      <text class="lanelabel" x="10" y={LANE + 36}>B · {b.title}</text>
-    </svg>
+  <!-- toolbar -->
+  <div class="tools">
+    <button class="btn play" onclick={togglePlay} aria-label={playing ? "Pause" : "Play from the playhead"} title="Play / pause (Space)">
+      <Icon name={playing ? "pause" : "play"} size={15} />
+    </button>
+    <button class="icon" onclick={() => seek(Math.max(0, shown.bStart - 5000))} title="Playhead to just before song B" aria-label="Playhead to just before song B">
+      <Icon name="prev" size={16} />
+    </button>
+    <span class="clock" aria-live="off">
+      <b>A</b> {head <= aDur ? fmt(Math.min(head, shown.aEnd)) : "—"}
+      <b>B</b> {head >= shown.bStart ? fmt(bTimeAt(head)) : "—"}
+    </span>
+    <span class="grow"></span>
+    <button class="icon" onclick={undo} disabled={!undoStack.length} title="Undo (Ctrl+Z)" aria-label="Undo"><Icon name="undo" size={16} /></button>
+    <button class="icon" onclick={redo} disabled={!redoStack.length} title="Redo (Ctrl+Shift+Z)" aria-label="Redo"><Icon name="redo" size={16} /></button>
+    <span class="sep"></span>
+    <button class="icon" onclick={() => zoomBy(1.5)} title="Zoom out" aria-label="Zoom out"><Icon name="min" size={16} /></button>
+    <input class="zoom" type="range" min="0" max="1" step="0.001" value={1 - zoomLevel} aria-label="Zoom"
+      oninput={(e) => {
+        const z = 1 - +e.currentTarget.value;
+        zoomBy((MIN_SPAN * Math.pow((extent + 4000) / MIN_SPAN, z)) / span);
+      }} />
+    <button class="icon" onclick={() => zoomBy(1 / 1.5)} title="Zoom in" aria-label="Zoom in"><Icon name="plus" size={16} /></button>
+    <button class="btn sm" onclick={fitTransition} title="Zoom to the transition">Transition</button>
+    <button class="btn sm" onclick={fitAll} title="Show both whole songs">Whole songs</button>
   </div>
 
-  <div class="bar">
-    <button class="btn play" onclick={preview} aria-label={playing ? "Stop preview" : "Preview the transition"}>
-      <Icon name={playing ? "pause" : "play"} size={15} />
-      {playing ? "Stop" : "Preview what's shown"}
-    </button>
-    <div class="zoom" role="radiogroup" aria-label="Zoom">
-      {#each spans as s (s)}
-        <button role="radio" aria-checked={span === s} class:on={span === s} onclick={() => (span = s)}>{s / 1000} s</button>
+  <div class="stage" bind:clientWidth={W}>
+    <svg
+      bind:this={svgEl}
+      width={W}
+      height={H}
+      role="application"
+      aria-label="Transition timeline"
+      onpointerdown={down}
+      onpointermove={move}
+      onpointerup={up}
+      onpointercancel={up}
+      ondblclick={dbl}
+      onwheel={wheel}
+    >
+      <defs>
+        <clipPath id="tl"><rect x="0" y="0" width={W} height={H} /></clipPath>
+      </defs>
+      <!-- ruler -->
+      <rect class="ruler" x="0" y="0" width={W} height={RULER - 4} rx="6" />
+      {#each ticks as tk (tk.px)}
+        <line class="tickline" x1={tk.px} x2={tk.px} y1={RULER - 10} y2={RULER - 4} />
+        <text class="tick" x={tk.px} y={RULER - 12} text-anchor="middle">{tk.label}</text>
       {/each}
-      <button onclick={() => (center = defaultCenter())} title="Centre on the transition"><Icon name="restore" size={13} /></button>
-    </div>
+
+      <!-- lanes -->
+      <rect class="lane" x="0" y={A_TOP} width={W} height={LANE} rx="12" />
+      <rect class="lane" x="0" y={B_TOP} width={W} height={LANE} rx="12" />
+      <g clip-path="url(#tl)">
+        <!-- song A (greyed after it stops) -->
+        <clipPath id="clipA"><rect x="-10" y={A_TOP} width={Math.max(0, Math.min(W + 10, x(shown.aEnd) + 10))} height={LANE} /></clipPath>
+        <path class="wave dim" d={pathA} />
+        <path class="wave a" d={pathA} clip-path="url(#clipA)" />
+        <!-- song B (greyed before it starts playing) -->
+        <clipPath id="clipB"><rect x={x(shown.bStart)} y={B_TOP} width={Math.max(0, W - x(shown.bStart) + 10)} height={LANE} /></clipPath>
+        <g class="bbody" role="button" tabindex="-1" aria-label="Song B: drag sideways to choose where it comes in" onpointerdown={(e) => downOn("b", e)}>
+          <rect x={x(bFrom)} y={B_TOP + 6} width={Math.max(0, x(bFrom + bDur) - x(bFrom))} height={LANE - 12} rx="8" class="bbox" />
+          <path class="wave dim" d={pathB} />
+          <path class="wave b" d={pathB} clip-path="url(#clipB)" />
+        </g>
+        {#if !peaksA && !waveError}
+          <text x={W / 2} y={A_TOP + LANE / 2} class="loading" text-anchor="middle">Reading the songs…</text>
+        {/if}
+
+        <!-- where B comes in, and where A stops -->
+        <line class="mark" x1={x(shown.bStart)} x2={x(shown.bStart)} y1={A_TOP} y2={B_TOP + LANE} />
+        <line class="mark end" x1={x(aDur)} x2={x(aDur)} y1={A_TOP} y2={A_TOP + LANE} />
+
+        <!-- volume lines -->
+        <polyline class="env" points={envA} />
+        <polyline class="env" points={envB} />
+
+        {#if custom}
+          <g class="pts">
+            {#each draft.aPoints ?? [] as p, i (i)}
+              <circle
+                role="slider"
+                tabindex="0"
+                aria-label={`Song A volume point at ${fmt(p.t)}`}
+                aria-valuenow={Math.round(p.g * 100)}
+                class:on={sel?.lane === "a" && sel.i === i}
+                cx={x(p.t)}
+                cy={yOf(p.g, A_TOP)}
+                r={sel?.lane === "a" && sel.i === i ? 7.5 : 6}
+                onpointerdown={(e) => downPoint("a", i, e)}
+                ondblclick={(e) => (e.stopPropagation(), removePoint("a", i))}
+                oncontextmenu={(e) => (e.preventDefault(), removePoint("a", i))}
+              />
+            {/each}
+            {#each draft.bPoints ?? [] as p, i (i)}
+              <circle
+                role="slider"
+                tabindex="0"
+                aria-label={`Song B volume point at ${fmt(p.t + draft.bOffset)}`}
+                aria-valuenow={Math.round(p.g * 100)}
+                class:on={sel?.lane === "b" && sel.i === i}
+                cx={x(draft.bStart + p.t)}
+                cy={yOf(p.g, B_TOP)}
+                r={sel?.lane === "b" && sel.i === i ? 7.5 : 6}
+                onpointerdown={(e) => downPoint("b", i, e)}
+                ondblclick={(e) => (e.stopPropagation(), removePoint("b", i))}
+                oncontextmenu={(e) => (e.preventDefault(), removePoint("b", i))}
+              />
+            {/each}
+          </g>
+        {/if}
+        <rect
+          class="endbar"
+          role="slider"
+          tabindex="0"
+          aria-label="Where song A stops"
+          aria-valuenow={Math.round(shown.aEnd)}
+          x={x(shown.aEnd) - 5}
+          y={A_TOP + LANE - 26}
+          width="10"
+          height="20"
+          rx="3"
+          onpointerdown={startDragEnd}
+        />
+
+        {#if nowAt !== null}
+          <line class="now" x1={x(nowAt)} x2={x(nowAt)} y1={A_TOP} y2={B_TOP + LANE} />
+        {/if}
+        <!-- playhead -->
+        <line class="head" x1={x(head)} x2={x(head)} y1="0" y2={B_TOP + LANE} />
+        <path class="headknob" d={`M${x(head) - 6} 0h12v8l-6 6l-6-6z`} />
+      </g>
+      <text class="lanelabel" x="12" y={A_TOP + 18}>A · {a.title}</text>
+      <text class="lanelabel" x="12" y={B_TOP + 18}>B · {b.title}</text>
+
+      <!-- overview of both whole songs; the box is what's shown above -->
+      <rect class="ov" x="0" y={OV_TOP} width={W} height={OV_H} rx="6" />
+      <rect class="ova" x={ov(0)} y={OV_TOP + 4} width={Math.max(1, ov(aDur) - ov(0))} height="6" rx="2" />
+      <rect class="ovb" x={ov(bFrom)} y={OV_TOP + 12} width={Math.max(1, ov(bFrom + bDur) - ov(bFrom))} height="6" rx="2" />
+      <rect class="ovview" x={Math.max(0, ov(v0))} y={OV_TOP + 1} width={Math.max(4, Math.min(W, ov(v0 + span)) - Math.max(0, ov(v0)))} height={OV_H - 2} rx="5" />
+      <line class="ovhead" x1={ov(head)} x2={ov(head)} y1={OV_TOP} y2={OV_TOP + OV_H} />
+    </svg>
   </div>
   {#if waveError}<p class="warn">Waveforms aren't available ({waveError}). You can still set the transition with the controls below.</p>{/if}
 
-  <div class="controls" class:off={effective !== "custom"}>
-    <label>
-      <span>Overlap <b>{sec(draft.aEnd - draft.bStart)} s</b></span>
-      <input type="range" min="0" max={Math.min(30000, a.durationMs - 1000)} step="100" value={draft.aEnd - draft.bStart} oninput={(e) => setNum("bStart", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>Cut from A's end <b>{sec(a.durationMs - draft.aEnd)} s</b></span>
-      <input type="range" min="0" max={Math.min(30000, a.durationMs / 2)} step="100" value={a.durationMs - draft.aEnd} oninput={(e) => setNum("aEnd", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>Skip B's intro <b>{sec(draft.bOffset)} s</b></span>
-      <input type="range" min="0" max={Math.min(30000, b.durationMs / 2)} step="100" value={draft.bOffset} oninput={(e) => setNum("bOffset", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>Fade out A <b>{sec(draft.fadeOut)} s</b></span>
-      <input type="range" min="0" max="20000" step="100" value={draft.fadeOut} oninput={(e) => setNum("fadeOut", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>Fade in B <b>{sec(draft.fadeIn)} s</b></span>
-      <input type="range" min="0" max="20000" step="100" value={draft.fadeIn} oninput={(e) => setNum("fadeIn", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>Fade shape</span>
-      <span class="curve">
-        <button class:on={draft.curve === "smooth"} onclick={() => { makeCustom(); draft = { ...draft, curve: "smooth" }; }}>Smooth</button>
-        <button class:on={draft.curve === "linear"} onclick={() => { makeCustom(); draft = { ...draft, curve: "linear" }; }}>Linear</button>
-      </span>
-    </label>
-    <label>
-      <span>A volume <b>{Math.round(draft.aGain * 100)}%</b></span>
-      <input type="range" min="0" max="1" step="0.01" value={draft.aGain} oninput={(e) => setNum("aGain", +e.currentTarget.value)} />
-    </label>
-    <label>
-      <span>B volume <b>{Math.round(draft.bGain * 100)}%</b></span>
-      <input type="range" min="0" max="1" step="0.01" value={draft.bGain} oninput={(e) => setNum("bGain", +e.currentTarget.value)} />
-    </label>
+  <div class="below">
+    <div class="controls" class:off={!custom}>
+      <label>
+        <span>Song B comes in <b>{fmt(draft.aEnd - draft.bStart)}</b> before A stops</span>
+        <input type="range" min="0" max={Math.min(aDur - 1000, 120000)} step="100" value={draft.aEnd - draft.bStart}
+          onpointerdown={remember} onkeydown={remember}
+          oninput={(e) => { const v = +e.currentTarget.value; edit((m) => ({ ...m, bStart: m.aEnd - v })); }} />
+      </label>
+      <label>
+        <span>Cut from A's end <b>{fmt(aDur - draft.aEnd)}</b></span>
+        <input type="range" min="0" max={Math.min(120000, aDur / 2)} step="100" value={aDur - draft.aEnd}
+          onpointerdown={remember} onkeydown={remember}
+          oninput={(e) => {
+            const v = +e.currentTarget.value;
+            edit((m) => {
+              const overlap = m.aEnd - m.bStart;
+              return { ...m, aEnd: aDur - v, bStart: aDur - v - overlap };
+            });
+          }} />
+      </label>
+      <label>
+        <span>Skip B's intro <b>{fmt(draft.bOffset)}</b></span>
+        <input type="range" min="0" max={Math.min(120000, bDur / 2)} step="100" value={draft.bOffset}
+          onpointerdown={remember} onkeydown={remember}
+          oninput={(e) => { const v = +e.currentTarget.value; edit((m) => ({ ...m, bOffset: v })); }} />
+      </label>
+      <label>
+        <span>Curve between points</span>
+        <span class="curve">
+          <button class:on={draft.curve === "smooth"} onclick={() => (remember(), edit((m) => ({ ...m, curve: "smooth" })))}>Smooth</button>
+          <button class:on={draft.curve === "linear"} onclick={() => (remember(), edit((m) => ({ ...m, curve: "linear" })))}>Linear</button>
+        </span>
+      </label>
+    </div>
+
+    <div class="inspector">
+      {#if sel}
+        <span class="ptitle">Point on song {sel.lane.toUpperCase()} at {fmt(sel.lane === "a" ? sel.p.t : sel.p.t + draft.bOffset)}</span>
+        <label class="pvol">
+          Volume <b>{Math.round(sel.p.g * 100)}%</b>
+          <input type="range" min="0" max="1" step="0.01" value={sel.p.g}
+            onpointerdown={remember} onkeydown={remember}
+            oninput={(e) => setPoint(sel.lane, sel.i, { t: sel.p.t, g: +e.currentTarget.value })} />
+        </label>
+        <button class="btn sm" onclick={() => removePoint(sel.lane, sel.i)}><Icon name="trash" size={14} /> Remove point</button>
+      {:else}
+        <span class="hint">
+          <b>Double-click</b> a yellow volume line to add a point · drag points to change time and volume · <b>right-click</b> a point to remove it ·
+          click the ruler or a song to move the playhead · <b>Space</b> plays from there · scroll to move, <b>Ctrl+scroll</b> to zoom
+        </span>
+      {/if}
+    </div>
   </div>
 
-  <p class="note">
-    Drag song B to choose where it comes in, the yellow points to shape the fades and volumes, and the small bar on song A to choose where it stops.
-    Drag the background (or scroll) to move the view: Preview plays exactly the part that's shown, from its left edge to its right edge.
-    This only changes how Aurora plays these two songs one after the other: your music files stay exactly as they are.
-  </p>
-
   <div class="row">
-    {#if mode === "custom"}<button class="btn" onclick={() => (draft = { ...smooth })}>Reset to Smooth</button>{/if}
+    {#if mode === "custom"}<button class="btn" onclick={() => (remember(), (draft = withPoints(clampMix(smooth, aDur, bDur))))}>Reset to Smooth</button>{/if}
     <span class="grow"></span>
+    <span class="safe">Your music files are never changed.</span>
     <button class="btn" onclick={close}>Cancel</button>
     <button class="btn primary" onclick={save}>Save</button>
   </div>
@@ -427,20 +764,25 @@
     left: 50%;
     top: 50%;
     translate: -50% -50%;
-    width: min(900px, calc(100vw - 32px));
-    max-height: calc(100vh - 32px);
-    overflow: auto;
-    padding: 22px 24px;
+    width: min(1100px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    overflow: hidden auto;
+    padding: 18px 22px;
     border-radius: var(--r-panel);
     background: var(--night-2);
     border: 1px solid var(--line);
     box-shadow: var(--shadow);
   }
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
   h2 {
-    font-size: 22px;
+    font-size: 21px;
   }
   .pair {
-    margin: 6px 0 14px;
+    margin: 4px 0 12px;
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
@@ -451,12 +793,11 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
-    margin-bottom: 14px;
+    margin-bottom: 12px;
   }
   .modes button,
-  .curve button,
-  .zoom button {
-    padding: 8px 10px;
+  .curve button {
+    padding: 7px 10px;
     border-radius: 10px;
     background: var(--well);
     border: 1px solid var(--line);
@@ -472,10 +813,55 @@
     font-size: 12px;
   }
   .modes .on,
-  .curve .on,
-  .zoom .on {
+  .curve .on {
     border-color: var(--accent);
     background: rgb(var(--accent-rgb) / 0.12);
+  }
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .btn.play {
+    width: 40px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .btn.sm {
+    height: 30px;
+    padding: 0 10px;
+    font-size: 13px;
+  }
+  .icon:disabled {
+    opacity: 0.35;
+  }
+  .clock {
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--ink-2);
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+  }
+  .clock b {
+    color: var(--ink-3);
+    font-size: 11px;
+    margin-left: 6px;
+  }
+  .grow {
+    flex: 1;
+  }
+  .sep {
+    width: 1px;
+    height: 20px;
+    background: var(--line);
+  }
+  .zoom {
+    width: 120px;
+    accent-color: var(--accent);
   }
   .stage {
     width: 100%;
@@ -484,15 +870,27 @@
   }
   svg {
     display: block;
-    cursor: grab;
+    cursor: default;
+  }
+  .ruler {
+    fill: rgb(var(--ink-rgb) / 0.05);
+    cursor: text;
+  }
+  .tick {
+    fill: var(--ink-3);
+    font-size: 10.5px;
+  }
+  .tickline {
+    stroke: rgb(var(--ink-rgb) / 0.25);
   }
   .lane {
-    fill: rgb(var(--ink-rgb) / 0.05);
+    fill: rgb(var(--ink-rgb) / 0.045);
     stroke: var(--line);
   }
   .wave {
-    stroke-width: 1.4;
+    stroke-width: 1.3;
     stroke-linecap: round;
+    pointer-events: none;
   }
   .wave.a {
     stroke: rgb(var(--ink-rgb) / 0.85);
@@ -501,17 +899,23 @@
     stroke: var(--accent);
   }
   .wave.dim {
-    stroke: rgb(var(--ink-rgb) / 0.18);
+    stroke: rgb(var(--ink-rgb) / 0.16);
   }
   .bbody {
-    cursor: ew-resize;
+    cursor: grab;
+  }
+  .bbox {
+    fill: rgb(var(--accent-rgb) / 0.06);
+    stroke: rgb(var(--accent-rgb) / 0.35);
+    stroke-dasharray: 4 4;
   }
   .mark {
     stroke: rgb(var(--ink-rgb) / 0.35);
     stroke-dasharray: 3 4;
+    pointer-events: none;
   }
   .mark.end {
-    stroke: rgb(var(--ink-rgb) / 0.2);
+    stroke: rgb(var(--ink-rgb) / 0.18);
   }
   .env {
     fill: none;
@@ -519,21 +923,26 @@
     stroke-width: 2;
     pointer-events: none;
   }
-  .handles circle,
-  .handles rect {
+  .pts circle {
     fill: #f2c94c;
     stroke: var(--night-2);
     stroke-width: 2;
     cursor: move;
   }
-  .handles rect {
+  .pts circle.on {
+    stroke: #fff;
+  }
+  .endbar {
+    fill: #f2c94c;
+    stroke: var(--night-2);
+    stroke-width: 2;
     cursor: ew-resize;
   }
   .head {
     stroke: #fff;
-    stroke-width: 2;
+    stroke-width: 1.5;
     pointer-events: none;
-    filter: drop-shadow(0 0 3px rgb(0 0 0 / 0.6));
+    filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.7));
   }
   .headknob {
     fill: #fff;
@@ -545,53 +954,69 @@
     stroke-dasharray: 2 3;
     pointer-events: none;
   }
-  .tick,
   .loading {
     fill: var(--ink-3);
-    font-size: 11px;
+    font-size: 12px;
   }
   .lanelabel {
     fill: var(--ink-2);
     font-size: 12px;
     font-weight: 600;
     pointer-events: none;
+    paint-order: stroke;
+    stroke: var(--night-2);
+    stroke-width: 3px;
   }
-  .bar {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin: 12px 0;
+  .ov {
+    fill: rgb(var(--ink-rgb) / 0.05);
+    cursor: pointer;
   }
-  .zoom {
-    display: flex;
-    gap: 6px;
-    margin-left: auto;
+  .ova {
+    fill: rgb(var(--ink-rgb) / 0.5);
+    pointer-events: none;
   }
-  .zoom button {
-    padding: 5px 10px;
-    font-size: 13px;
+  .ovb {
+    fill: var(--accent);
+    opacity: 0.7;
+    pointer-events: none;
+  }
+  .ovview {
+    fill: rgb(var(--ink-rgb) / 0.08);
+    stroke: rgb(var(--ink-rgb) / 0.6);
+    pointer-events: none;
+  }
+  .ovhead {
+    stroke: #fff;
+    pointer-events: none;
+  }
+  .below {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 18px;
+    margin-top: 12px;
   }
   .controls {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-    gap: 12px 18px;
-    margin-top: 6px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 18px;
   }
   .controls.off {
     opacity: 0.55;
   }
-  .controls label {
+  .controls label,
+  .pvol {
     display: flex;
     flex-direction: column;
     gap: 6px;
     font-size: 13px;
     color: var(--ink-2);
   }
-  .controls b {
+  .controls b,
+  .pvol b {
     color: var(--ink);
     font-variant-numeric: tabular-nums;
   }
-  .controls input {
+  input[type="range"] {
     accent-color: var(--accent);
   }
   .curve {
@@ -602,26 +1027,51 @@
     padding: 4px 10px;
     font-size: 13px;
   }
-  .note,
-  .warn {
-    font-size: 12.5px;
+  .inspector {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: var(--well);
+    border: 1px solid var(--line);
+    font-size: 13px;
+  }
+  .inspector .btn {
+    align-self: flex-start;
+  }
+  .ptitle {
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .hint {
     color: var(--ink-3);
-    margin: 14px 0 0;
+    line-height: 1.55;
+  }
+  .hint b {
+    color: var(--ink-2);
   }
   .warn {
+    font-size: 12.5px;
     color: rgb(240 140 120);
+    margin: 8px 0 0;
   }
   .row {
     display: flex;
     gap: 10px;
-    margin-top: 18px;
+    align-items: center;
+    margin-top: 16px;
   }
-  .grow {
-    flex: 1;
+  .safe {
+    font-size: 12px;
+    color: var(--ink-3);
   }
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .modes {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .below {
+      grid-template-columns: 1fr;
     }
   }
 </style>

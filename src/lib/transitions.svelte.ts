@@ -37,6 +37,20 @@ export interface Mix {
   aGain: number;
   bGain: number;
   curve: Curve;
+  /**
+   * Volume points drawn in the editor (custom transitions). When present they
+   * replace the fade/gain numbers above. A's are on A's timeline; B's are ms
+   * after B starts (so they move with B). Between points the volume follows
+   * `curve`; after B's last point it returns to 100% over 1.5 s.
+   */
+  aPoints?: Point[];
+  bPoints?: Point[];
+}
+
+/** One volume point: time (ms) and volume (0–1). */
+export interface Point {
+  t: number;
+  g: number;
 }
 
 export type PairMode = "none" | "smooth" | "custom";
@@ -64,11 +78,27 @@ export function shape(x: number, curve: Curve) {
   return curve === "smooth" ? Math.sin((v * Math.PI) / 2) : v;
 }
 
-const SETTLE_MS = 1500;
+export const SETTLE_MS = 1500;
+
+/** Volume between two points; "smooth" uses equal-power curves (no dip in loudness mid-crossfade). */
+function between(p: Point, q: Point, t: number, curve: Curve) {
+  const x = q.t > p.t ? Math.min(1, Math.max(0, (t - p.t) / (q.t - p.t))) : 1;
+  if (curve === "linear") return p.g + (q.g - p.g) * x;
+  return q.g < p.g ? q.g + (p.g - q.g) * Math.cos((x * Math.PI) / 2) : p.g + (q.g - p.g) * Math.sin((x * Math.PI) / 2);
+}
+
+/** Volume along a list of points (held flat before the first and after the last). */
+export function along(pts: Point[], t: number, curve: Curve) {
+  if (!pts.length) return 1;
+  if (t <= pts[0].t) return pts[0].g;
+  for (let i = 1; i < pts.length; i++) if (t <= pts[i].t) return between(pts[i - 1], pts[i], t, curve);
+  return pts[pts.length - 1].g;
+}
 
 /** Volume of A at A-time `t`. */
 export function gainA(m: Mix, t: number) {
   if (t >= m.aEnd) return 0;
+  if (m.aPoints?.length) return Math.min(1, Math.max(0, along(m.aPoints, t, m.curve)));
   let g = t < m.bStart ? 1 : 1 + (m.aGain - 1) * Math.min(1, (t - m.bStart) / 400);
   if (m.fadeOut > 0 && t > m.aEnd - m.fadeOut) g *= shape((m.aEnd - t) / m.fadeOut, m.curve);
   return g;
@@ -77,6 +107,12 @@ export function gainA(m: Mix, t: number) {
 /** Volume of B at A-time `t` (B's own time is t − bStart + bOffset). */
 export function gainB(m: Mix, t: number) {
   if (t < m.bStart) return 0;
+  if (m.bPoints?.length) {
+    const r = t - m.bStart;
+    const last = m.bPoints[m.bPoints.length - 1];
+    const g = r <= last.t ? along(m.bPoints, r, m.curve) : last.g + (1 - last.g) * Math.min(1, (r - last.t) / SETTLE_MS);
+    return Math.min(1, Math.max(0, g));
+  }
   const inG = m.fadeIn > 0 ? shape((t - m.bStart) / m.fadeIn, m.curve) : 1;
   const end = Math.max(m.aEnd, m.bStart + m.fadeIn);
   const level = t <= end ? m.bGain : m.bGain + (1 - m.bGain) * Math.min(1, (t - end) / SETTLE_MS);
@@ -84,7 +120,32 @@ export function gainB(m: Mix, t: number) {
 }
 
 /** When the transition is completely over, on A's timeline. */
-export const mixEnd = (m: Mix) => Math.max(m.aEnd, m.bStart + m.fadeIn) + (m.bGain < 1 ? SETTLE_MS : 0);
+export function mixEnd(m: Mix) {
+  if (m.bPoints?.length) {
+    const last = m.bPoints[m.bPoints.length - 1];
+    return Math.max(m.aEnd, m.bStart + last.t + (last.g < 1 ? SETTLE_MS : 0));
+  }
+  return Math.max(m.aEnd, m.bStart + m.fadeIn) + (m.bGain < 1 ? SETTLE_MS : 0);
+}
+
+/** The same mix with its fades written out as volume points (for editing). */
+export function withPoints(m: Mix): Mix {
+  if (m.aPoints && m.bPoints) return m;
+  const fs = m.aEnd - m.fadeOut;
+  const a: Point[] = [{ t: Math.min(m.bStart, fs), g: 1 }];
+  if (fs > a[0].t + 1) a.push({ t: fs, g: m.aGain });
+  else a[0].g = m.aGain;
+  if (m.aEnd > fs + 1) a.push({ t: m.aEnd, g: 0 });
+  const b: Point[] = [{ t: 0, g: m.fadeIn > 0 ? 0 : m.bGain }];
+  if (m.fadeIn > 0) b.push({ t: m.fadeIn, g: m.bGain });
+  return { ...m, aPoints: m.aPoints ?? a, bPoints: m.bPoints ?? b };
+}
+
+const cleanPoints = (pts: Point[] | undefined, min: number, max: number) =>
+  pts
+    ?.map((p) => ({ t: Math.min(max, Math.max(min, Math.round(p.t))), g: Math.round(Math.min(1, Math.max(0, p.g)) * 1000) / 1000 }))
+    .sort((p, q) => p.t - q.t)
+    .slice(0, 64);
 
 /** Keeps a mix possible for these two songs. */
 export function clampMix(m: Mix, aDur: number, bDur: number): Mix {
@@ -100,6 +161,8 @@ export function clampMix(m: Mix, aDur: number, bDur: number): Mix {
     aGain: Math.min(1, Math.max(0, m.aGain)),
     bGain: Math.min(1, Math.max(0, m.bGain)),
     curve: m.curve === "linear" ? "linear" : "smooth",
+    ...(m.aPoints ? { aPoints: cleanPoints(m.aPoints, 0, aEnd) } : {}),
+    ...(m.bPoints ? { bPoints: cleanPoints(m.bPoints, 0, Math.max(0, (bDur || 600000) - bOffset)) } : {}),
   };
 }
 

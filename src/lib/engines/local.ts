@@ -118,6 +118,7 @@ export class LocalEngine {
 
   private fade(to: number): Promise<void> {
     cancelAnimationFrame(this.fadeRaf);
+    this.fadeRaf = 0;
     const a = this.a;
     const from = a.volume;
     const start = performance.now();
@@ -126,7 +127,10 @@ export class LocalEngine {
         const k = Math.min(1, (now - start) / FADE_MS);
         a.volume = from + (to - from) * k;
         if (k < 1) this.fadeRaf = requestAnimationFrame(step);
-        else resolve();
+        else {
+          this.fadeRaf = 0;
+          resolve();
+        }
       };
       this.fadeRaf = requestAnimationFrame(step);
     });
@@ -173,6 +177,8 @@ export class LocalEngine {
     const a = this.a;
     if (!n || a.paused) return this.syncTimer();
     const t = a.currentTime * 1000;
+    // Volume points drawn before B comes in (custom transitions) shape A already.
+    if (n.mix.aPoints?.length && !this.fadeRaf) a.volume = Math.min(1, this.applied(this.volume) * gainA(n.mix, t));
     if (this.preloaded !== n.track.path && t >= n.mix.bStart - PRELOAD_MS) {
       const b = this.b;
       b.pause();
@@ -229,6 +235,7 @@ export class LocalEngine {
 
   async load(track: Track, autoplay: boolean) {
     cancelAnimationFrame(this.fadeRaf);
+    this.fadeRaf = 0;
     this.finish();
     this.next = null;
     this.switching = true;
@@ -274,6 +281,7 @@ export class LocalEngine {
   setVolume(v: number) {
     this.volume = v;
     cancelAnimationFrame(this.fadeRaf);
+    this.fadeRaf = 0;
     this.applyVolumes();
   }
 
