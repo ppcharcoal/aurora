@@ -10,7 +10,7 @@
   import { output } from "../output.svelte";
   import { player } from "../player.svelte";
   import { settings } from "../settings.svelte";
-  import { clampMix, gainA, gainB, mixEnd, transitions, type Mix, type PairMode } from "../transitions.svelte";
+  import { clampMix, gainA, gainB, transitions, type Mix, type PairMode } from "../transitions.svelte";
   import type { Track } from "../types";
   import { ui } from "../ui.svelte";
   import Icon from "./Icon.svelte";
@@ -106,6 +106,7 @@
     const out: { px: number; label: string }[] = [];
     for (let t = Math.ceil(v0 / step) * step; t <= v0 + span; t += step) {
       const left = (a.durationMs - t) / 1000;
+      if (x(t) < 16 || x(t) > W - 16) continue; // labels at the very edge would be cut off
       out.push({ px: x(t), label: left > 0.05 ? `−${left.toFixed(0)}s` : left < -0.05 ? `+${(-left).toFixed(0)}s` : "end" });
     }
     return out;
@@ -195,38 +196,68 @@
     playhead = null;
   }
 
+  /**
+   * Plays exactly what the timeline shows, from its left edge to its right
+   * edge, with the current settings (also unsaved ones). A follows its own
+   * clock until it stops, then B's clock takes over.
+   */
   async function preview() {
     if (playing) return stopPreview();
     if (player.playing) await player.toggle();
     const m = $state.snapshot(shown) as Mix;
     const vol = settings.value.volume ** 2;
-    const from = Math.max(0, m.bStart - 5000);
-    pa = new Audio(mediaSrc(a.path));
-    pb = new Audio(mediaSrc(b.path));
-    for (const el of [pa, pb]) output.attach(el);
-    pa.currentTime = from / 1000;
-    pb.currentTime = m.bOffset / 1000;
-    pb.volume = 0;
-    pa.volume = vol * gainA(m, from);
+    const from = Math.max(0, v0);
+    const until = v0 + span; // the right edge of the view
+    const A = new Audio(mediaSrc(a.path));
+    const B = new Audio(mediaSrc(b.path));
+    pa = A;
+    pb = B;
+    for (const el of [A, B]) output.attach(el);
     playing = true;
-    await pa.play().catch(() => {});
+    playhead = from;
+    let aOn = from < m.aEnd;
     let bOn = false;
+    const startB = (t: number) => {
+      bOn = true;
+      B.currentTime = (m.bOffset + Math.max(0, t - m.bStart)) / 1000;
+      B.volume = Math.min(1, vol * gainB(m, t));
+      B.play().catch(() => {});
+    };
+    if (aOn) {
+      A.currentTime = from / 1000;
+      A.volume = Math.min(1, vol * gainA(m, from));
+      await A.play().catch(() => {});
+    }
+    if (from >= m.bStart) startB(from);
+    // Nothing of A in view and B not due yet: keep time with the system clock until B starts.
+    const t0 = performance.now();
     timer = setInterval(() => {
-      if (!pa || !pb) return;
-      const t = pa.ended || pa.currentTime * 1000 >= m.aEnd ? m.bStart + (pb.currentTime * 1000 - m.bOffset) : pa.currentTime * 1000;
-      if (!bOn && t >= m.bStart) {
-        bOn = true;
-        pb.currentTime = (m.bOffset + (t - m.bStart)) / 1000;
-        pb.play().catch(() => {});
+      if (pa !== A) return;
+      const aT = A.currentTime * 1000;
+      let t: number;
+      if (aOn && !A.paused) t = aT;
+      else if (bOn) t = m.bStart + (B.currentTime * 1000 - m.bOffset);
+      else t = from + (performance.now() - t0);
+      if (aOn && (aT >= m.aEnd || A.ended)) {
+        aOn = false;
+        A.pause();
       }
-      const bT = bOn ? m.bStart + (pb.currentTime * 1000 - m.bOffset) : t;
-      pa.volume = Math.min(1, vol * gainA(m, pa.currentTime * 1000));
-      if (pa.currentTime * 1000 >= m.aEnd) pa.pause();
-      pb.volume = Math.min(1, vol * gainB(m, bT));
-      playhead = bOn ? bT : t;
-      if (bT > mixEnd(m) + 4000) stopPreview();
-    }, 40);
+      if (!bOn && t >= m.bStart) startB(t);
+      if (aOn) A.volume = Math.min(1, vol * gainA(m, aT));
+      if (bOn) B.volume = Math.min(1, vol * gainB(m, t));
+      playhead = t;
+      if (t >= until || (!aOn && bOn && B.ended)) stopPreview();
+    }, 30);
   }
+
+  /** Where the main player is in these two songs (shown as a faint line). */
+  const nowAt = $derived.by(() => {
+    const c = player.current;
+    if (!c || playing) return null;
+    if (c.key === a.key) return player.position;
+    if (c.key === b.key) return shown.bStart + (player.position - shown.bOffset);
+    return null;
+  });
 
   onDestroy(stopPreview);
 
@@ -301,8 +332,12 @@
         <rect role="slider" tabindex="0" aria-label="Where song A stops" aria-valuenow={Math.round(shown.aEnd)} x={x(shown.aEnd) - 5} y={LANE - 22} width="10" height="18" rx="3" onpointerdown={(e) => down("aEnd", e)} />
         <circle role="slider" tabindex="0" aria-label="Fade in end and song B volume" aria-valuenow={Math.round(shown.fadeIn)} cx={x(shown.bStart + shown.fadeIn)} cy={yOf(shown.bGain, LANE + 18)} r="7" onpointerdown={(e) => down("fadeIn", e)} />
       </g>
+      {#if nowAt !== null && nowAt >= v0 && nowAt <= v0 + span}
+        <line class="now" x1={x(nowAt)} x2={x(nowAt)} y1="0" y2={LANE * 2 + 18} />
+      {/if}
       {#if playhead !== null}
-        <line class="head" x1={x(playhead)} x2={x(playhead)} y1="0" y2={LANE * 2 + 18} />
+        <line class="head" x1={x(playhead)} x2={x(playhead)} y1="-2" y2={LANE * 2 + 20} />
+        <circle class="headknob" cx={x(playhead)} cy={LANE + 9} r="5" />
       {/if}
       <!-- time axis: time left in song A -->
       {#each ticks as tk (tk.px)}
@@ -316,7 +351,7 @@
   <div class="bar">
     <button class="btn play" onclick={preview} aria-label={playing ? "Stop preview" : "Preview the transition"}>
       <Icon name={playing ? "pause" : "play"} size={15} />
-      {playing ? "Stop" : "Preview"}
+      {playing ? "Stop" : "Preview what's shown"}
     </button>
     <div class="zoom" role="radiogroup" aria-label="Zoom">
       {#each spans as s (s)}
@@ -367,6 +402,7 @@
 
   <p class="note">
     Drag song B to choose where it comes in, the yellow points to shape the fades and volumes, and the small bar on song A to choose where it stops.
+    Drag the background (or scroll) to move the view: Preview plays exactly the part that's shown, from its left edge to its right edge.
     This only changes how Aurora plays these two songs one after the other: your music files stay exactly as they are.
   </p>
 
@@ -495,7 +531,18 @@
   }
   .head {
     stroke: #fff;
+    stroke-width: 2;
+    pointer-events: none;
+    filter: drop-shadow(0 0 3px rgb(0 0 0 / 0.6));
+  }
+  .headknob {
+    fill: #fff;
+    pointer-events: none;
+  }
+  .now {
+    stroke: rgb(var(--ink-rgb) / 0.55);
     stroke-width: 1.5;
+    stroke-dasharray: 2 3;
     pointer-events: none;
   }
   .tick,
