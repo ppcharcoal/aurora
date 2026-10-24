@@ -207,3 +207,19 @@ export function clampMix(m: Mix, aDur: number, bDur: number): Mix {
   };
 }
 
+
+/* ---------------------------------------------------------------- volume sync -- */
+
+/** Volume sync brings every song to about this loudness (like the big streaming apps). */
+export const TARGET_LUFS = -14;
+
+/**
+ * How much to turn a song up or down (a multiplier) for volume sync, from
+ * its measured loudness and peak. Quiet songs are only turned up as far as
+ * they can go without clipping. The same rule is used on phones (Kotlin).
+ */
+export function normGain(l: { lufs: number; peak: number }): number {
+  let db = Math.min(10, Math.max(-15, TARGET_LUFS - l.lufs));
+  if (db > 0 && l.peak > 0) db = Math.max(0, Math.min(db, -20 * Math.log10(l.peak) - 0.5));
+  return Math.pow(10, db / 20);
+}

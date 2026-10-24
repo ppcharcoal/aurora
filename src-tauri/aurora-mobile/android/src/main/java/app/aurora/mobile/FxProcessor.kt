@@ -2,6 +2,7 @@ package app.aurora.mobile
 
 import androidx.annotation.OptIn
 import androidx.media3.common.C
+import androidx.media3.common.Timeline
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
 import androidx.media3.common.util.UnstableApi
@@ -18,6 +19,11 @@ import kotlin.math.sqrt
  * and treble (high shelf) like the desktop app. Neutral settings pass the
  * sound through unchanged. Only the sound being played is processed; the
  * music files are never touched.
+ *
+ * Volume sync multiplies on top: `norms` holds the level for each song
+ * (media id → multiplier). Which song is coming through is read from the
+ * stream info ExoPlayer hands over at each song change, so the new level
+ * starts exactly with the new song, not when it's heard a moment later.
  */
 @OptIn(UnstableApi::class)
 class FxProcessor : BaseAudioProcessor() {
@@ -29,6 +35,21 @@ class FxProcessor : BaseAudioProcessor() {
   @Volatile
   var fx: Fx = Fx.NONE
 
+  /** Volume sync: media id → multiplier (empty when it's off). */
+  @Volatile
+  var norms: Map<String, Float> = emptyMap()
+
+  /** The song coming through right now (media id). */
+  @Volatile
+  var playingId: String? = null
+
+  /** Whether ExoPlayer said which song it is (otherwise the service sets `playingId`). */
+  @Volatile
+  var streamKnown = false
+    private set
+
+  private val window = Timeline.Window()
+  private val period = Timeline.Period()
   private var current = 1f
   private var applied: Fx? = null
   private var rate = 44100
@@ -53,7 +74,8 @@ class FxProcessor : BaseAudioProcessor() {
     val size = inputBuffer.remaining()
     if (size == 0) return
     val out = replaceOutputBuffer(size)
-    val target = gain.coerceIn(0f, 1f)
+    val norm = playingId?.let { norms[it] } ?: 1f
+    val target = (gain.coerceIn(0f, 1f) * norm).coerceIn(0f, 4f)
     val f = fx
     if (f !== applied) {
       applied = f
@@ -76,7 +98,7 @@ class FxProcessor : BaseAudioProcessor() {
           var x = if (float) inputBuffer.float.toDouble() else inputBuffer.short.toDouble()
           if (filtersOn && ch < 8) x = hi.run(lo.run(lp.run(x, ch), ch), ch)
           x *= g
-          if (float) out.putFloat(x.toFloat()) else out.putShort(x.coerceIn(-32768.0, 32767.0).toInt().toShort())
+          if (float) out.putFloat(x.coerceIn(-1.0, 1.0).toFloat()) else out.putShort(x.coerceIn(-32768.0, 32767.0).toInt().toShort())
         }
       }
       // Odd leftover bytes (shouldn't happen): pass them on.
@@ -86,7 +108,18 @@ class FxProcessor : BaseAudioProcessor() {
     out.flip()
   }
 
-  override fun onFlush() {
+  override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
+    // A new song (or a jump): find out which one from the stream info.
+    try {
+      val uid = streamMetadata.periodUid
+      val tl = streamMetadata.timeline
+      if (uid != null && !tl.isEmpty) {
+        val w = tl.getPeriodByUid(uid, period).windowIndex
+        playingId = tl.getWindow(w, window).mediaItem.mediaId
+        streamKnown = true
+      }
+    } catch (e: Exception) {
+    }
     lp.reset()
     lo.reset()
     hi.reset()

@@ -306,6 +306,7 @@ class AuroraMobilePlugin(private val activity: Activity) : Plugin(activity) {
           if (service != null) service.userVolume = v else c.volume = v
         }
         "transition" -> PlaybackService.setTransition(activity, (args.value ?: 0.0).toLong())
+        "normalize" -> PlaybackService.setNormalize((args.value ?: 0.0) > 0.5)
         "stop" -> {
           c.stop()
           c.clearMediaItems()

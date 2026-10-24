@@ -44,6 +44,7 @@
   import NowPlayingSheet from "./lib/components/NowPlayingSheet.svelte";
   import Visualizer from "./lib/components/Visualizer.svelte";
   import { isAndroid, isElectron } from "./lib/platform";
+  import { loudness } from "./lib/loudness.svelte";
 
   // Lets styles tell the Linux (Electron) app apart; see the reduced-motion note in app.css.
   if (isElectron) document.documentElement.dataset.shell = "electron";
@@ -106,6 +107,7 @@
         ),
       );
       output.init().catch(() => {});
+      loudness.init().catch(() => {});
       try {
         player.startNative();
       } catch (e) {

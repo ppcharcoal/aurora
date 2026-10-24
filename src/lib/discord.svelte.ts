@@ -5,6 +5,7 @@ import { discordHooks } from "./hooks";
 import { isAndroid } from "./platform";
 import { player } from "./player.svelte";
 import { settings } from "./settings.svelte";
+import { loudness } from "./loudness.svelte";
 import { debouncedSaver, storeGet } from "./store";
 import type { Track } from "./types";
 
@@ -84,6 +85,7 @@ class Discord {
   private save: (v: unknown) => void = () => {};
   private started = false;
   private sentKey = "";
+  private sentNorms = "";
   private sentPlan = "";
   private sentNext = "";
   private sentOn = false;
@@ -138,6 +140,20 @@ class Discord {
         this.sentPlan = key;
         this.sentNext = plan?.track.key ?? "";
         this.send({ t: "next", from: cur.path, next: this.nextMsg(cur) }, true);
+      });
+      // Volume sync switched or a song measured: the bot changes the level straight away.
+      $effect(() => {
+        void loudness.version;
+        void settings.value.volumeSync;
+        const cur = player.current;
+        const nxt = player.nextPlan?.track;
+        if (!this.live || !cur) return;
+        const norms: Record<string, number> = {};
+        for (const t of [cur, nxt]) if (t) norms[t.path] = untrack(() => loudness.gainOf(t));
+        const key = JSON.stringify(norms);
+        if (key === this.sentNorms) return;
+        this.sentNorms = key;
+        this.send({ t: "norm", norms }, true);
       });
       // The bot is the audio output while it's in a channel: this computer stays quiet.
       $effect(() => {
@@ -235,6 +251,8 @@ class Discord {
       durationMs: t.durationMs,
       cover: t.coverPath ?? null,
       color: c ? (c[0] << 16) | (c[1] << 8) | c[2] : null,
+      // Volume sync: the bot turns each song up or down the same way.
+      norm: loudness.gainOf(t),
     };
   }
 
@@ -264,6 +282,7 @@ class Discord {
       durationMs: t.durationMs,
       cover: t.coverPath ?? null,
       color: c ? (c[0] << 16) | (c[1] << 8) | c[2] : null,
+      norm: loudness.gainOf(t),
       volume: settings.value.volume,
     });
   }

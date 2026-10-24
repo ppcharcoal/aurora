@@ -29,7 +29,7 @@ use crate::store::data_dir;
 
 const FORMAT: u32 = 1;
 /// Files in the data folder that are machine-specific and rebuilt on restore.
-const SKIP_DATA: &[&str] = &["library.json"];  // previews/ and bin/ are never backed up either
+const SKIP_DATA: &[&str] = &["library.json", "loudness.json"];  // previews/ and bin/ are never backed up either
 
 #[derive(Serialize, Deserialize, Clone)]
 struct FolderEntry {

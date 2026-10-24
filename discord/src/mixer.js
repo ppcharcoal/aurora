@@ -177,6 +177,8 @@ class Filters {
 /* --------------------------------------------------------- session -- */
 
 const perceptual = (v) => Math.min(1, Math.max(0, v * v));
+// Volume sync: Aurora sends how much to turn each song up or down (1 = as recorded).
+const normOf = (deck) => Math.min(4, Math.max(0, deck?.track?.norm ?? 1));
 
 /**
  * Plays `track` from `fromMs` and, if `next` is set ({ track, mix }), goes
@@ -225,6 +227,12 @@ class Session {
     let m = this.marks[0];
     for (const k of this.marks) if (k.outMs <= playedMs) m = k;
     return { track: m.track, ms: m.ms + (playedMs - m.outMs) };
+  }
+
+  /** Volume sync: new level per song path (takes effect within 20 ms). */
+  setNorms(norms) {
+    const tracks = [this.cur?.track, this.out?.track, this.inc?.track, this.next?.track, this.after?.track];
+    for (const t of tracks) if (t && typeof norms[t.path] === "number") t.norm = norms[t.path];
   }
 
   setVolume(v) {
@@ -309,7 +317,7 @@ class Session {
   }
 
   soloBlock(buf) {
-    const g = perceptual(this.volume);
+    const g = perceptual(this.volume) * normOf(this.cur);
     this.ramp(buf, null, this.gains[0], g, null, this.cur.filters);
     this.gains[0] = g;
     return buf;
@@ -330,8 +338,8 @@ class Session {
     const v = perceptual(this.volume);
     const aT = outDeck ? outDeck.ms : 0;
     const t = m.bStart + (this.cur.ms - m.bOffset); // A's timeline, from B's clock
-    const gA = aBuf ? v * gainA(m, aT) : 0;
-    const gB = v * gainB(m, t);
+    const gA = aBuf ? v * normOf(outDeck) * gainA(m, aT) : 0;
+    const gB = v * normOf(this.cur) * gainB(m, t);
     if (hasFx(m.aFx) && aBuf) outDeck.filters.set(fxA(m, aT));
     if (hasFx(m.bFx)) this.cur.filters.set(fxB(m, t));
     const len = Math.max(bBuf?.length ?? 0, aBuf?.length ?? 0);

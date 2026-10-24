@@ -99,9 +99,11 @@ class AudioGraph {
     this.chains.delete(el);
   }
 
+  /** Volume 0–1, or up to 4 (volume sync turning a quiet song up: needs the Web Audio path). */
   setVolume(el: HTMLMediaElement, v: number) {
-    const c = this.chains.get(el);
-    const val = Math.min(1, Math.max(0, v));
+    let c = this.chains.get(el);
+    if (!c && v > 1.001) c = this.route(el) ?? undefined;
+    const val = Math.min(c ? 4 : 1, Math.max(0, v));
     if (!c) {
       el.volume = val;
       return;

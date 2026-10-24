@@ -8,6 +8,8 @@ mod audio;
 #[cfg(not(aurora_android))]
 mod discord;
 #[cfg(not(aurora_android))]
+mod loudness;
+#[cfg(not(aurora_android))]
 mod media_server;
 #[cfg(not(aurora_android))]
 mod presence;
@@ -51,6 +53,8 @@ fn handlers() -> impl Fn(tauri::ipc::Invoke<rt::Rt>) -> bool + Send + Sync + 'st
             library::library_remove_copies,
             media_server::media_base,
             audio::audio_peaks,
+            loudness::loudness_known,
+            loudness::loudness_measure,
             audio::audio_bounds,
             discord::discord_token_info,
             discord::discord_token_set,
@@ -170,6 +174,7 @@ pub fn run() {
             {
                 app.manage(discord::DiscordBot::default());
                 app.manage(presence::Presence::default());
+                app.manage(loudness::LoudnessCache::default());
             }
             let state = library::LibraryState::load(&handle)?;
             app.manage(state);

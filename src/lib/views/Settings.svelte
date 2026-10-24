@@ -19,6 +19,7 @@
   import DataLimit from "../components/DataLimit.svelte";
   import OutputPicker from "../components/OutputPicker.svelte";
   import PhoneMusic from "../components/PhoneMusic.svelte";
+  import { loudness } from "../loudness.svelte";
   import { defaultMusicFolder, documentsDir, isOldPhoneDefault, musicDir, native, prettyPath } from "../native";
 
   async function addFolder() {
@@ -271,6 +272,20 @@
       {:else}
         For your own mixes, open a playlist or album and click <b>Transitions</b>: choose per song, or make a custom one in the editor. Transitions never change your music files.
       {/if}
+    </p>
+
+    <span class="lbl spaced">Volume sync</span>
+    <label class="toggle">
+      <input type="checkbox" checked={settings.value.volumeSync} onchange={(e) => loudness.set(e.currentTarget.checked)} />
+      <span class="sw"></span>
+      <span>Play every song at the same volume</span>
+    </label>
+    <p class="note first">
+      Some songs are recorded much louder or quieter than others (older albums, different sites). Aurora measures how loud each song
+      really sounds and turns it up or down while playing, so you don't have to touch the volume between songs. Your files aren't changed,
+      and transitions keep their own fades and volume points on top.
+      {#if isAndroid}Songs are measured on the phone as they come up.{:else}Works for the Discord bot too.{/if}
+      {#if loudness.progress}<br /><b>Measuring songs: {loudness.progress.done} / {loudness.progress.total}</b>{/if}
     </p>
   </section>
 

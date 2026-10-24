@@ -10,6 +10,7 @@ import { ui } from "./ui.svelte";
 import { native, type NativePlay, type NativeState } from "./native";
 import { isAndroid } from "./platform";
 import { pairKey, transitions, type Mix } from "./transitions.svelte";
+import { loudness } from "./loudness.svelte";
 
 /** Repeat-one plays the same song again: no transition. */
 const repeatSame = (r: Repeat, a: Track, b: Track) => r === "one" || a.key === b.key;
@@ -86,6 +87,12 @@ class Player {
           void this.repeat;
           void transitions.version;
           this.reschedule();
+        });
+        // Volume sync: a song got measured, or the switch changed.
+        $effect(() => {
+          void loudness.version;
+          void settings.value.volumeSync;
+          this.engine.refreshVolume();
         });
       });
     }
@@ -298,6 +305,7 @@ class Player {
     }
     const key = pairKey(a, b) + "#" + transitions.version;
     this.planned = key;
+    loudness.gainOf(b); // measure the next song ahead (volume sync)
     const now = transitions.planNow(a, b);
     this.nextPlan = { track: b, mix: now };
     if (!isAndroid) this.engine.schedule(b, now);

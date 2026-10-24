@@ -56,6 +56,7 @@ pub fn main() {
         .manage(yt::Downloads::default())
         .manage(crate::discord::DiscordBot::default())
         .manage(crate::presence::Presence::default())
+        .manage(crate::loudness::LoudnessCache::default())
         .invoke_handler(handlers())
         .build(ctx)
         .expect("Aurora core failed to start");

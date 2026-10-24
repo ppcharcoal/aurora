@@ -51,6 +51,110 @@ class PlaybackService : MediaLibraryService() {
       Transitions.changed()
       current?.let { svc -> svc.handler.post { svc.replanSafe() } }
     }
+
+    /** Volume sync switched in the app's settings. */
+    fun setNormalize(on: Boolean) {
+      current?.let { svc -> svc.handler.post { svc.normOn = on } }
+    }
+  }
+
+  /* ------------------------------------------------------------------------
+   * Volume sync (Settings → Playback): every song at about the same loudness.
+   * Songs are measured (Loudness.kt) as they come up, the next one ahead of
+   * time, and the rest of the library slowly in the background. Each song's
+   * level is a multiplier in FxProcessor, on top of the transition lines, so
+   * transitions sound the same as before. Files are never changed.
+   * --------------------------------------------------------------------- */
+
+  var normOn = false
+    set(v) {
+      if (field == v) return
+      field = v
+      updateNorms()
+      if (v) scanLibrary()
+    }
+
+  /** Song path → multiplier, for the songs measured so far. */
+  private val normByPath = HashMap<String, Float>()
+  private val normPending = HashSet<String>()
+  private val normWorker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "aurora-loudness").apply { priority = Thread.MIN_PRIORITY + 1 } }
+  private val scanWorker = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "aurora-loudness-scan").apply { priority = Thread.MIN_PRIORITY } }
+  private var scanning = false
+
+  /** Gives both players the levels of the current and next songs (measuring them if needed). */
+  fun updateNorms() {
+    if (!::player.isInitialized) return
+    if (!normOn) {
+      fxMain.norms = emptyMap()
+      fxSide.norms = emptyMap()
+      return
+    }
+    val map = HashMap<String, Float>()
+    val idx = player.currentMediaItemIndex
+    if (idx == C.INDEX_UNSET) return
+    val indices = listOf(idx, player.nextMediaItemIndex, player.previousMediaItemIndex, plan?.bIndex ?: C.INDEX_UNSET)
+    for (i in indices) {
+      if (i == C.INDEX_UNSET || i >= player.mediaItemCount) continue
+      val item = player.getMediaItemAt(i)
+      val path = pathOf(item) ?: continue
+      val g = normByPath[path]
+      if (g != null) {
+        map[item.mediaId] = g
+      } else if (normPending.add(path)) {
+        normWorker.execute {
+          val r = try {
+            Loudness.of(this, path)
+          } catch (e: Exception) {
+            null
+          }
+          handler.post {
+            normPending.remove(path)
+            normByPath[path] = r?.let { Loudness.gain(it) } ?: 1f
+            updateNorms()
+          }
+        }
+      }
+    }
+    fxMain.norms = map
+    fxSide.norms = map
+  }
+
+  /** The app couldn't tell the processor which song it is: go by what the player says. */
+  private fun checkPlaying() {
+    val id = player.currentMediaItem?.mediaId ?: return
+    if (!fxMain.streamKnown) fxMain.playingId = id
+    handler.postDelayed({
+      // Still not matching after a while (no song change seen in the audio): fix it.
+      if (phase == Phase.IDLE && player.currentMediaItem?.mediaId == id && fxMain.playingId != id) fxMain.playingId = id
+    }, 2000)
+  }
+
+  /** Measures the rest of the library, slowly, so songs are ready before they play. */
+  private fun scanLibrary() {
+    if (scanning) return
+    scanning = true
+    val ctx = applicationContext
+    scanWorker.execute {
+      try {
+        for (t in Library.tracksOf(ctx, Library.SONGS)) {
+          if (!normOn) break
+          try {
+            Loudness.of(ctx, t.path)
+          } catch (e: Exception) {
+          }
+        }
+      } catch (e: Exception) {
+      }
+      handler.post { scanning = false }
+    }
+  }
+
+  /** The setting saved in the app (for when the app isn't open, e.g. Android Auto). */
+  private fun savedNormalize(): Boolean = try {
+    val profile = JSONObject(File(dataDir, "profiles.json").readText()).optString("active")
+    JSONObject(File(dataDir, "p-$profile-settings.json").readText()).optBoolean("volumeSync", false)
+  } catch (e: Exception) {
+    false
   }
 
   /* ------------------------------------------------------------------------
@@ -208,7 +312,9 @@ class PlaybackService : MediaLibraryService() {
   private fun prepareSide(p: Plan, atMs: Double) {
     val s = ensureSide()
     if (sideFor != p.bId) {
-      s.setMediaItem(player.getMediaItemAt(p.bIndex))
+      val item = player.getMediaItemAt(p.bIndex)
+      if (!fxSide.streamKnown) fxSide.playingId = item.mediaId
+      s.setMediaItem(item)
       s.prepare()
       sideFor = p.bId
     }
@@ -346,11 +452,14 @@ class PlaybackService : MediaLibraryService() {
           else -> tail = null
         }
         if (!ours) replanSafe()
+        updateNorms()
+        checkPlaying()
         saveQueue()
       }
 
       override fun onTimelineChanged(timeline: Timeline, reason: Int) {
         replanSafe()
+        updateNorms()
         saveQueue()
       }
 
@@ -388,6 +497,7 @@ class PlaybackService : MediaLibraryService() {
     }
     session = builder.build()
     current = this
+    normOn = savedNormalize()
   }
 
   /** The app changed songs or playlists: refresh what Android Auto shows. */
@@ -418,6 +528,8 @@ class PlaybackService : MediaLibraryService() {
     handler.removeCallbacksAndMessages(null)
     side?.release()
     side = null
+    normWorker.shutdownNow()
+    scanWorker.shutdownNow()
     player.release()
     super.onDestroy()
   }

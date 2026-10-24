@@ -14,6 +14,7 @@
   import { player } from "../player.svelte";
   import { settings } from "../settings.svelte";
   import { graph } from "../audiograph";
+  import { loudness } from "../loudness.svelte";
   import {
     clampMix,
     FX_NAMES,
@@ -534,6 +535,9 @@
     if (player.playing) await player.toggle();
     const m = $state.snapshot(shown) as Mix;
     const vol = settings.value.volume ** 2;
+    // Volume sync, as in the player: each song at its own level, the lines on top.
+    const nA = loudness.gainOf(a);
+    const nB = loudness.gainOf(b);
     const A = new Audio();
     const B = new Audio();
     for (const [el, t] of [[A, a], [B, b]] as const) {
@@ -550,13 +554,13 @@
     const startB = (t: number) => {
       bOn = true;
       B.currentTime = (m.bOffset + Math.max(0, t - m.bStart)) / 1000;
-      graph.setVolume(B, vol * gainB(m, t));
+      graph.setVolume(B, vol * nB * gainB(m, t));
       if (fxOn) graph.setFx(B, fxB(m, t));
       B.play().catch(() => {});
     };
     if (aOn) {
       A.currentTime = from / 1000;
-      graph.setVolume(A, vol * gainA(m, from));
+      graph.setVolume(A, vol * nA * gainA(m, from));
       if (fxOn) graph.setFx(A, fxA(m, from));
       A.play().catch(() => {});
     }
@@ -575,11 +579,11 @@
       }
       if (!bOn && t >= m.bStart) startB(t);
       if (aOn) {
-        graph.setVolume(A, vol * gainA(m, aT));
+        graph.setVolume(A, vol * nA * gainA(m, aT));
         if (fxOn) graph.setFx(A, fxA(m, aT));
       }
       if (bOn) {
-        graph.setVolume(B, vol * gainB(m, t));
+        graph.setVolume(B, vol * nB * gainB(m, t));
         if (fxOn) graph.setFx(B, fxB(m, t));
       }
       head = t;

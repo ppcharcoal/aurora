@@ -3,6 +3,7 @@ import { output } from "../output.svelte";
 import { spectrum } from "../spectrum";
 import { fxA, fxB, gainA, gainB, hasFx, mixEnd, type Mix } from "../transitions.svelte";
 import { graph, NEUTRAL } from "../audiograph";
+import { loudness } from "../loudness.svelte";
 import type { Track } from "../types";
 
 export interface EngineEvents {
@@ -105,16 +106,31 @@ export class LocalEngine {
     return Math.min(1, Math.max(0, v * v));
   }
 
+  /** Which song each deck holds (volume sync turns each song up or down on its own). */
+  private trackOf = new Map<HTMLAudioElement, Track>();
+  private norm(el: HTMLAudioElement) {
+    return loudness.gainOf(this.trackOf.get(el));
+  }
+  /** The deck's volume: the slider (perceptual) × volume sync. */
+  private level(el: HTMLAudioElement) {
+    return this.applied(this.volume) * this.norm(el);
+  }
+
+  /** Volume sync measured a song (or was switched): apply it now. */
+  refreshVolume() {
+    if (!this.fadeRaf) this.applyVolumes();
+  }
+
   private applyVolumes() {
     const base = this.applied(this.volume);
     const r = this.running;
     if (!r) {
-      graph.setVolume(this.a, base);
+      graph.setVolume(this.a, base * this.norm(this.a));
       return;
     }
     const bT = r.mix.bStart + (r.inc.currentTime * 1000 - r.mix.bOffset);
-    if (!r.outDone) graph.setVolume(r.out, Math.min(1, base * gainA(r.mix, r.out.currentTime * 1000)));
-    graph.setVolume(r.inc, Math.min(1, base * gainB(r.mix, bT)));
+    if (!r.outDone) graph.setVolume(r.out, base * this.norm(r.out) * gainA(r.mix, r.out.currentTime * 1000));
+    graph.setVolume(r.inc, base * this.norm(r.inc) * gainB(r.mix, bT));
   }
 
   private fade(to: number): Promise<void> {
@@ -180,12 +196,13 @@ export class LocalEngine {
     const t = a.currentTime * 1000;
     // Effects and volume points drawn before B comes in (custom transitions) shape A already.
     if (hasFx(n.mix.aFx)) graph.setFx(a, fxA(n.mix, t));
-    if (n.mix.aPoints?.length && !this.fadeRaf) graph.setVolume(a, Math.min(1, this.applied(this.volume) * gainA(n.mix, t)));
+    if (n.mix.aPoints?.length && !this.fadeRaf) graph.setVolume(a, this.level(a) * gainA(n.mix, t));
     if (this.preloaded !== n.track.path && t >= n.mix.bStart - PRELOAD_MS) {
       const b = this.b;
       b.pause();
       graph.setVolume(b, 0);
       b.src = mediaSrc(n.track.path);
+      this.trackOf.set(b, n.track);
       b.currentTime = n.mix.bOffset / 1000;
       b.load();
       this.preloaded = n.track.path;
@@ -198,6 +215,7 @@ export class LocalEngine {
     const out = this.a;
     const inc = this.b;
     if (this.preloaded !== n.track.path) inc.src = mediaSrc(n.track.path);
+    this.trackOf.set(inc, n.track);
     graph.setVolume(inc, 0);
     inc.muted = out.muted;
     inc.currentTime = (n.mix.bOffset + Math.max(0, t - n.mix.bStart)) / 1000;
@@ -249,7 +267,8 @@ export class LocalEngine {
     const a = this.a;
     for (const d of this.decks) graph.setFx(d, NEUTRAL);
     a.src = mediaSrc(track.path);
-    graph.setVolume(a, this.applied(this.volume));
+    this.trackOf.set(a, track);
+    graph.setVolume(a, this.level(a));
     this.switching = false;
     if (autoplay) await a.play();
     this.syncTimer();
@@ -265,7 +284,7 @@ export class LocalEngine {
     graph.setVolume(this.a, 0);
     await this.a.play();
     this.syncTimer();
-    await this.fade(this.applied(this.volume));
+    await this.fade(this.level(this.a));
   }
 
   async pause() {

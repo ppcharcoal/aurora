@@ -85,7 +85,7 @@ function endSession() {
 
 const toTrack = (m) =>
   m && m.path
-    ? { path: m.path, title: m.title || path.basename(m.path), artist: m.artist ?? "", album: m.album ?? "", durationMs: m.durationMs ?? 0, cover: m.cover ?? null, color: m.color ?? null }
+    ? { path: m.path, title: m.title || path.basename(m.path), artist: m.artist ?? "", album: m.album ?? "", durationMs: m.durationMs ?? 0, cover: m.cover ?? null, color: m.color ?? null, norm: typeof m.norm === "number" ? m.norm : 1 }
     : null;
 /** Aurora's plan for the next song: { track, mix } (mix: the transition, as in the app). */
 const toNext = (n) => (n && n.path && n.mix ? { track: toTrack(n), mix: n.mix } : null);
@@ -388,6 +388,13 @@ function handle(m) {
       // Instant: the mixer applies it to the next 20 ms.
       s.volume = typeof m.volume === "number" ? m.volume : 1;
       s.session?.setVolume(s.volume);
+      return;
+    case "norm":
+      // Volume sync: new levels for songs (path → gain).
+      if (m.norms && typeof m.norms === "object") {
+        for (const t of [s.track, s.next?.track]) if (t && typeof m.norms[t.path] === "number") t.norm = m.norms[t.path];
+        s.session?.setNorms(m.norms);
+      }
       return;
     case "quit":
       return quit();

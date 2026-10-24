@@ -35,6 +35,8 @@ export interface Settings {
   oneCopy: boolean;
   /** The first-time setup has been finished or skipped. */
   setupDone: boolean;
+  /** Volume sync: play every song at about the same loudness. */
+  volumeSync: boolean;
 }
 
 const defaults: Settings = {
@@ -53,6 +55,7 @@ const defaults: Settings = {
   audioOutput: null,
   oneCopy: true,
   setupDone: false,
+  volumeSync: false,
 };
 
 class SettingsStore {
