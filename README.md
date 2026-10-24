@@ -18,7 +18,7 @@
 **Play**
 - Your existing music folders work too: MP3, FLAC, M4A/AAC, OGG, Opus and WAV.
 - Playlists with drag-to-reorder and custom covers, a play queue with shuffle and repeat, and albums built from your tags.
-- **Transitions between songs**, like a DJ mix: *None*, or *Smooth* (skips silent endings and crossfades into the next song). On Windows and Linux, playlists and albums also get a **transition editor**: both whole songs on a zoomable timeline, a playhead you can place anywhere to listen from, drag where the next song comes in, and lines you shape with your own points for volume and effects: **Dampen** (muffle), **Bass** and **Treble** (with undo). Your music files are never changed. Phones get None and Smooth (a fade out and in).
+- **Transitions between songs**, like a DJ mix: *None*, or *Smooth* (skips silent endings and crossfades into the next song). Playlists and albums also get a **transition editor** (on PCs and phones): both whole songs on a zoomable timeline, a playhead you can place anywhere to listen from, drag where the next song comes in, and lines you shape with your own points for volume and effects: **Dampen** (muffle), **Bass** and **Treble** (with undo). Transitions come along in backups, and the Discord bot plays them too. Your music files are never changed.
 - Choose the audio output (speakers, headphones, Bluetooth, USB DAC) inside the app.
 - A look that follows the music: the accent colour comes from the cover art, with dark, light and system themes and a choice of backgrounds.
 - **Visualizer**: click (or tap) the playing song's cover for a full-screen visualizer in the spirit of the classic Windows Media Player ones: *Aurora*, *Spectrum*, *Halo*, *Ambience* and *Tunnel*, all reacting to the music in the cover's colours.
@@ -36,6 +36,7 @@
 - Background playback with notification, lock-screen and Bluetooth controls.
 - **Android Auto**: browse Recent, Playlists, Albums and Songs in the car, or ask for music by voice.
 - Adds the music already on your phone, and saves downloads to `Download/Aurora`.
+- Transitions work in the background, on the lock screen and in the car too (on a phone: press and hold to add or remove a point in the editor).
 - **Space saver** (Settings → Downloads): downloads YouTube's smallest stream, about a third of the size.
 
 ## Install

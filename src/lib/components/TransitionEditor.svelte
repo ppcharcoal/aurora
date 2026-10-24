@@ -1101,6 +1101,9 @@
     font-size: 10.5px;
     color: var(--accent);
   }
+  :global(html[data-phone]) .phint {
+    display: none;
+  }
   .phint {
     color: var(--ink-3);
     font-size: 12px;
