@@ -12,20 +12,9 @@ import { output } from "./output.svelte";
  * is live processing: the music files are never touched.
  */
 
-export interface Fx {
-  /** 0 = clear, 1 = fully muffled (like through a wall). */
-  damp: number;
-  /** −1…1 → −12…+12 dB around 110 Hz. */
-  bass: number;
-  /** −1…1 → −12…+12 dB around 6 kHz. */
-  treble: number;
-}
+export { NEUTRAL, isNeutral, dampHz, type Fx } from "./mixmath";
+import { dampHz, isNeutral, type Fx } from "./mixmath";
 
-export const NEUTRAL: Fx = { damp: 0, bass: 0, treble: 0 };
-export const isNeutral = (f: Fx) => f.damp < 0.002 && Math.abs(f.bass) < 0.002 && Math.abs(f.treble) < 0.002;
-
-/** Low-pass cutoff for a dampen amount (exponential, 20 kHz → 250 Hz). */
-export const dampHz = (d: number) => 20000 * Math.pow(250 / 20000, Math.min(1, Math.max(0, d)));
 const DB = 12;
 
 interface Chain {

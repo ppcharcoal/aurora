@@ -689,6 +689,13 @@ mod tests {
         fs::write(old_data.join("downloaded.json"), serde_json::json!({"vid1": single.to_string_lossy()}).to_string()).unwrap();
         fs::write(old_data.join("library.json"), "{}").unwrap();
         fs::write(old_data.join("avatars").join("abc-1.jpg"), b"jpg").unwrap();
+        // A custom transition between the two songs (and the default), as the app saves it.
+        let pair = format!("{}>{}", ids[0], ids[1]);
+        fs::write(
+            old_data.join("p-abc-transitions.json"),
+            serde_json::json!({"mode": "smooth", "smoothMs": 6000, "pairs": {pair: {"mode": "custom", "mix": {"bStart": 1000, "aEnd": 2000}}}}).to_string(),
+        )
+        .unwrap();
 
         let zip = base.join("backup.zip");
         create(&old_data, &index, &zip, true, &|_| {}).unwrap();
@@ -715,6 +722,9 @@ mod tests {
         assert_eq!(set["downloadFolder"], serde_json::json!(dest.join("My Music").to_string_lossy()));
         let dl: Value = read_json(&new_data.join("downloaded.json")).unwrap();
         assert_eq!(dl["vid1"], serde_json::json!(new_single.to_string_lossy()));
+        let tr: Value = read_json(&new_data.join("p-abc-transitions.json")).unwrap();
+        assert_eq!(tr["mode"], serde_json::json!("smooth"));
+        assert_eq!(tr["pairs"][format!("{nid0}>{nid1}")]["mix"]["bStart"], serde_json::json!(1000));
         assert!(new_data.join("avatars").join("abc-1.jpg").is_file());
         assert!(!new_data.join("library.json").exists());
 

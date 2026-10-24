@@ -52,6 +52,8 @@ interface BotState {
   playing: boolean;
   paused: boolean;
   positionMs: number;
+  /** The song Discord is hearing. */
+  path?: string | null;
 }
 
 const ICON_URL = "https://raw.githubusercontent.com/ppcharcoal/aurora/main/src-tauri/icons/128x128%402x.png";
@@ -82,6 +84,8 @@ class Discord {
   private save: (v: unknown) => void = () => {};
   private started = false;
   private sentKey = "";
+  private sentPlan = "";
+  private sentNext = "";
   private sentOn = false;
   private presenceTimer: ReturnType<typeof setTimeout> | undefined;
   private lastPresence = "";
@@ -114,13 +118,26 @@ class Discord {
         // The position is read without following it (it changes 4× a second).
         const pos = untrack(() => (player.loading ? 0 : player.position));
         if (this.sentKey !== t.key) {
+          // Went into this song through a transition the bot was told about: it does that itself.
+          const bySelf = untrack(() => player.mixedInto) === t.key && this.sentNext === t.key;
           this.sentKey = t.key;
           this.sentOn = on;
-          this.playTrack(t, pos, !on);
+          if (!bySelf) this.playTrack(t, pos, !on);
         } else if (this.sentOn !== on) {
           this.sentOn = on;
           this.send({ t: on ? "resume" : "pause", positionMs: Math.round(pos) });
         }
+      });
+      // What comes next (and the transition into it): the bot mixes it the same way.
+      $effect(() => {
+        const plan = player.nextPlan;
+        const cur = player.current;
+        if (!this.live || !cur) return;
+        const key = JSON.stringify([cur.key, plan?.track.key, plan?.mix]);
+        if (key === this.sentPlan) return;
+        this.sentPlan = key;
+        this.sentNext = plan?.track.key ?? "";
+        this.send({ t: "next", from: cur.path, next: this.nextMsg(cur) }, true);
       });
       // The bot is the audio output while it's in a channel: this computer stays quiet.
       $effect(() => {
@@ -208,9 +225,35 @@ class Discord {
     });
   }
 
+  private trackMsg(t: Track) {
+    const c = t.color;
+    return {
+      path: t.path,
+      title: t.title,
+      artist: t.artist,
+      album: t.album ?? "",
+      durationMs: t.durationMs,
+      cover: t.coverPath ?? null,
+      color: c ? (c[0] << 16) | (c[1] << 8) | c[2] : null,
+    };
+  }
+
+  /** The next song and how to go into it. "None" becomes a gapless join. */
+  private nextMsg(cur: Track) {
+    const plan = untrack(() => player.nextPlan);
+    if (!plan) return null;
+    const mix =
+      plan.mix ?? { bStart: cur.durationMs, aEnd: cur.durationMs, bOffset: 0, fadeOut: 0, fadeIn: 0, aGain: 1, bGain: 1, curve: "linear" };
+    return { ...this.trackMsg(plan.track), mix: $state.snapshot(mix) };
+  }
+
   private playTrack(t: Track, offsetMs: number, paused: boolean) {
+    const plan = untrack(() => player.nextPlan);
+    this.sentNext = plan?.track.key ?? "";
+    this.sentPlan = JSON.stringify([t.key, plan?.track.key, plan?.mix]);
     const c = t.color;
     this.send({
+      next: this.nextMsg(t),
       t: "play",
       path: t.path,
       offsetMs: Math.round(offsetMs),
@@ -243,7 +286,15 @@ class Discord {
         this.voice = m as unknown as BotState;
         if (this.voice.voice === "connected" && prev !== "connected") this.sentKey = "";
         // Drifted apart (a slow disk, a hiccup in the call): line the bot up with the player again.
-        if (this.live && player.playing && this.voice.playing && Math.abs(this.voice.positionMs - player.position) > 2500) {
+        // (Only when both are on the same song: during a transition they can be a moment apart.)
+        if (
+          this.live &&
+          player.playing &&
+          this.voice.playing &&
+          this.voice.path === player.current?.path &&
+          !player.mixing &&
+          Math.abs(this.voice.positionMs - player.position) > 2500
+        ) {
           this.send({ t: "seek", positionMs: Math.round(player.position) });
         }
         break;

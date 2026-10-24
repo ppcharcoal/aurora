@@ -85,6 +85,20 @@ class ControlArgs {
 }
 
 @InvokeArg
+class PeaksArgs {
+  lateinit var path: String
+  var startMs: Double = 0.0
+  var durMs: Double = 0.0
+  var points: Int = 900
+}
+
+@InvokeArg
+class BoundsArgs {
+  lateinit var path: String
+  var durationMs: Double = 0.0
+}
+
+@InvokeArg
 class OutputArgs {
   var id: String? = null
 }
@@ -298,6 +312,41 @@ class AuroraMobilePlugin(private val activity: Activity) : Plugin(activity) {
         }
         else -> throw IllegalArgumentException("Unknown action ${args.action}")
       }
+    }
+  }
+
+  /** Loudness outline of part of a song, for the transition editor. */
+  @Command
+  fun peaks(invoke: Invoke) {
+    val args = invoke.parseArgs(PeaksArgs::class.java)
+    io.execute {
+      val r = try {
+        AudioScan.peaks(args.path, args.startMs, args.durMs, args.points)
+      } catch (e: Exception) {
+        null
+      }
+      if (r == null) {
+        invoke.reject("Couldn't read this song")
+      } else {
+        val arr = JSArray()
+        for (v in r) arr.put(v)
+        invoke.resolve(JSObject().put("peaks", arr))
+      }
+    }
+  }
+
+  /** Where a song's music starts and ends (silence trimmed), for Smooth transitions. */
+  @Command
+  fun bounds(invoke: Invoke) {
+    val args = invoke.parseArgs(BoundsArgs::class.java)
+    io.execute {
+      val b = try {
+        AudioScan.bounds(args.path, args.durationMs)
+      } catch (e: Exception) {
+        null
+      }
+      if (b == null) invoke.reject("Couldn't read this song")
+      else invoke.resolve(JSObject().put("leadMs", b.leadMs).put("endMs", b.endMs))
     }
   }
 

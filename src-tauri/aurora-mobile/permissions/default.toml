@@ -6,7 +6,7 @@ permissions = ["allow-player"]
 
 [[permission]]
 identifier = "allow-player"
-description = "Phone music, picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events."
+description = "Phone music, song analysis for transitions (waveforms, silence), picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events."
 commands.allow = [
   "queue",
   "control",
@@ -19,6 +19,8 @@ commands.allow = [
   "musicFolder",
   "vizStart",
   "vizStop",
+  "peaks",
+  "bounds",
   "phoneFolders",
   "pickImage",
   "createDocument",

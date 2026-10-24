@@ -191,7 +191,11 @@ jobs:
           printf 'password=%s\n' "$ANDROID_KEY_PASSWORD" > src-tauri/gen/android/keystore.properties
           node scripts/android-signing.mjs
 
-      - run: npm run android:build
+      - name: Build
+        run: |
+          npm run android:build > /tmp/android.log 2>&1 \
+            || { grep -E "^e: |error:|What went wrong" -A4 /tmp/android.log | head -n 60 | sed 's/^/::error::/'; tail -n 20 /tmp/android.log | sed 's/^/::error::/'; exit 1; }
+          tail -n 5 /tmp/android.log
 
       - name: Rename app
         run: |

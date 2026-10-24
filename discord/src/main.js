@@ -24,7 +24,7 @@ const {
   MessageFlags,
 } = require("discord.js");
 const voice = require("@discordjs/voice");
-const { spawn } = require("node:child_process");
+const { Session } = require("./mixer.js");
 const path = require("node:path");
 const fs = require("node:fs");
 const readline = require("node:readline");
@@ -47,35 +47,52 @@ const s = {
   guildId: null,
   channelId: null,
   player: voice.createAudioPlayer({ behaviors: { noSubscriber: voice.NoSubscriberBehavior.Play } }),
-  proc: null,
+  session: null, // the mixer playing right now (mixer.js)
   track: null, // what Aurora is playing: { path, title, artist, album, durationMs, cover }
-  offsetMs: 0, // where the current ffmpeg run started in the song
+  next: null, // { track, mix }: how to go into the next song
+  offsetMs: 0, // where the song is (while paused) or was started
   resource: null,
   paused: false,
   volume: 1,
   npMessage: null,
-  restartTimer: null,
 };
 
 // ---------------------------------------------------------------- audio ----
 
-function position() {
-  return s.offsetMs + (s.resource ? s.resource.playbackDuration : 0);
+/** What Discord is hearing right now: the song and the position in it (ms). */
+function heard() {
+  if (!s.session || !s.resource) return { track: s.track, ms: s.offsetMs };
+  return s.session.heard(s.resource.playbackDuration);
 }
+const position = () => heard().ms;
 
-function killFfmpeg() {
-  if (s.proc) {
-    s.proc.removeAllListeners();
-    try {
-      s.proc.kill("SIGKILL");
-    } catch {}
-    s.proc = null;
+// When the bot has gone into the next song by itself (a transition), show it once it's heard.
+setInterval(() => {
+  const h = heard();
+  if (!s.session || !h.track || !s.track || h.track.path === s.track.path) return;
+  s.track = h.track;
+  setActivity();
+  postNowPlaying();
+  report();
+}, 250).unref();
+
+function endSession() {
+  if (s.session) {
+    s.session.stop();
+    s.session = null;
   }
 }
 
-/** Starts (or restarts) the song at `ms`; ffmpeg turns the file into Opus for Discord. */
+const toTrack = (m) =>
+  m && m.path
+    ? { path: m.path, title: m.title || path.basename(m.path), artist: m.artist ?? "", album: m.album ?? "", durationMs: m.durationMs ?? 0, cover: m.cover ?? null, color: m.color ?? null }
+    : null;
+/** Aurora's plan for the next song: { track, mix } (mix: the transition, as in the app). */
+const toNext = (n) => (n && n.path && n.mix ? { track: toTrack(n), mix: n.mix } : null);
+
+/** (Re)starts playing the current song at `ms`, with the transition into the next one (see mixer.js). */
 function startAt(ms) {
-  killFfmpeg();
+  endSession();
   if (!s.track) return;
   s.offsetMs = Math.max(0, ms);
   if (s.paused) {
@@ -85,34 +102,19 @@ function startAt(ms) {
     return report();
   }
   if (!fs.existsSync(s.track.path)) return fail(`The file isn't there any more: ${s.track.path}`, "file");
-  const gain = Math.max(0, Math.min(2, s.volume));
-  const args = [
-    "-hide_banner", "-loglevel", "error", "-nostdin",
-    "-ss", (Math.max(0, ms) / 1000).toFixed(3),
-    "-i", s.track.path,
-    "-vn", "-af", `volume=${(gain * gain).toFixed(3)}`,
-    "-ac", "2", "-ar", "48000",
-    "-c:a", "libopus", "-b:a", "128k", "-frame_duration", "20", "-application", "audio",
-    "-f", "ogg", "pipe:1",
-  ];
-  const proc = spawn(s.ffmpeg, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
-  s.proc = proc;
-  let err = "";
-  proc.stderr.on("data", (d) => (err = (err + d).slice(-600)));
-  proc.on("error", (e) => fail(`FFmpeg couldn't start (${e.message}). Install FFmpeg, or let Aurora install its tools.`, "ffmpeg"));
-  proc.on("close", (code) => {
-    if (code && s.proc === proc) fail(`FFmpeg stopped: ${err.trim() || "code " + code}`, "ffmpeg");
+  const session = new Session({
+    ffmpeg: s.ffmpeg,
+    track: s.track,
+    fromMs: s.offsetMs,
+    // Only a plan that starts from this song.
+    next: s.next && (!s.nextFrom || s.nextFrom === s.track.path) ? s.next : null,
+    volume: s.volume,
+    onError: (e) => fail(e, "ffmpeg"),
   });
-  s.resource = voice.createAudioResource(proc.stdout, { inputType: voice.StreamType.OggOpus });
+  s.session = session;
+  s.resource = voice.createAudioResource(session.ogg, { inputType: voice.StreamType.OggOpus });
   s.player.play(s.resource);
   report();
-}
-
-function restartSoon() {
-  clearTimeout(s.restartTimer);
-  s.restartTimer = setTimeout(() => {
-    if (s.track && s.proc && !s.paused) startAt(position());
-  }, 350);
 }
 
 s.player.on(voice.AudioPlayerStatus.Idle, () => {
@@ -122,8 +124,9 @@ s.player.on(voice.AudioPlayerStatus.Idle, () => {
 s.player.on("error", (e) => log(`player: ${e.message}`));
 
 function stopAudio() {
-  killFfmpeg();
+  endSession();
   s.track = null;
+  s.next = null;
   s.resource = null;
   s.player.stop(true);
   setActivity();
@@ -143,6 +146,7 @@ function report() {
     paused: s.paused,
     positionMs: Math.round(position()),
     title: s.track?.title ?? null,
+    path: s.track?.path ?? null,
   });
 }
 setInterval(() => s.conn && report(), 2000).unref();
@@ -346,7 +350,9 @@ function handle(m) {
       return leave();
     case "play": {
       const same = s.track && s.track.path === m.path;
-      s.track = { path: m.path, title: m.title || path.basename(m.path), artist: m.artist ?? "", album: m.album ?? "", durationMs: m.durationMs ?? 0, cover: m.cover ?? null, color: m.color ?? null };
+      s.track = toTrack(m);
+      s.next = toNext(m.next);
+      s.nextFrom = m.path;
       s.paused = !!m.paused;
       if (typeof m.volume === "number") s.volume = m.volume;
       startAt(m.offsetMs ?? 0);
@@ -354,6 +360,12 @@ function handle(m) {
       if (!s.paused && (!same || !s.npMessage)) postNowPlaying();
       return;
     }
+    case "next":
+      // What comes after the current song changed (queue, transitions…).
+      s.next = toNext(m.next);
+      s.nextFrom = m.from ?? null;
+      s.session?.setNext(s.next, m.from);
+      return;
     case "pause":
       // Stop the sound (not just pause the stream): reliable even mid-buffering.
       if (!s.paused) s.offsetMs = typeof m.positionMs === "number" ? m.positionMs : position();
@@ -373,8 +385,10 @@ function handle(m) {
     case "stop":
       return stopAudio();
     case "volume":
+      // Instant: the mixer applies it to the next 20 ms.
       s.volume = typeof m.volume === "number" ? m.volume : 1;
-      return restartSoon();
+      s.session?.setVolume(s.volume);
+      return;
     case "quit":
       return quit();
   }

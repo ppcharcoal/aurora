@@ -7,7 +7,6 @@
   //    double-click / right-click / Delete to remove one;
   //  - scroll to move along, Ctrl+scroll (or the zoom slider) to zoom; Ctrl+Z undoes.
   // Only Aurora's transition settings change; the music files are never edited.
-  import { invoke } from "@tauri-apps/api/core";
   import { onDestroy, onMount, untrack } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { mediaSrc } from "../media";
@@ -98,8 +97,8 @@
     fitTransition();
     try {
       const [pa, pb] = await Promise.all([
-        invoke<number[]>("audio_peaks", { path: a.path, startMs: 0, durMs: Math.round(aDur), points: count(aDur) }),
-        invoke<number[]>("audio_peaks", { path: b.path, startMs: 0, durMs: Math.round(bDur), points: count(bDur) }),
+        transitions.peaksOf(a.path, 0, Math.round(aDur), count(aDur)),
+        transitions.peaksOf(b.path, 0, Math.round(bDur), count(bDur)),
       ]);
       peaksA = pa;
       peaksB = pb;
@@ -323,9 +322,23 @@
   };
   const laneAt = (py: number) => (py >= A_TOP && py <= A_TOP + LANE ? "a" : py >= B_TOP && py <= B_TOP + LANE ? "b" : null);
 
+  // Touch screens: press and hold to add a point (or remove one), since there's no double-click or right-click.
+  let hold: ReturnType<typeof setTimeout> | undefined;
+  const touch = (e: PointerEvent) => e.pointerType !== "mouse";
+  const cancelHold = () => clearTimeout(hold);
+
   function down(e: PointerEvent) {
     if (e.button !== 0) return;
     const { px, py } = local(e);
+    cancelHold();
+    if (touch(e) && laneAt(py)) {
+      hold = setTimeout(() => {
+        if (drag?.kind === "bg" && !drag.moved) {
+          drag = null;
+          addAt(px, py);
+        }
+      }, 550);
+    }
     svgEl!.setPointerCapture(e.pointerId);
     if (py < RULER) {
       drag = { kind: "scrub" };
@@ -348,6 +361,20 @@
   function downPoint(lane: "a" | "b", i: number, e: PointerEvent) {
     e.stopPropagation();
     if (e.button !== 0) return;
+    cancelHold();
+    if (touch(e)) {
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      hold = setTimeout(() => {
+        const d = drag;
+        if (d?.kind === "point" && Math.abs(d.x0 - x0) < 1 && Math.abs(d.y0 - y0) < 1 && !moved) {
+          drag = null;
+          undoStack = undoStack.slice(0, -1); // the press didn't change anything
+          removePoint(lane, i);
+        }
+      }, 600);
+    }
+    moved = false;
     svgEl!.setPointerCapture(e.pointerId);
     selected = { lane, i };
     const p = listOf(draft, lane)![i];
@@ -355,8 +382,14 @@
     drag = { kind: "point", lane, i, x0: e.clientX, y0: e.clientY, p: { ...p } };
   }
 
+  let moved = false;
+
   function move(e: PointerEvent) {
     if (!drag) return;
+    if ("x0" in drag && Math.abs(e.clientX - drag.x0) + Math.abs(e.clientY - ("y0" in drag ? drag.y0 : e.clientY)) > 6) {
+      moved = true;
+      cancelHold();
+    }
     const { px } = local(e);
     const dt = "x0" in drag ? ((e.clientX - drag.x0) / W) * span : 0;
     switch (drag.kind) {
@@ -392,6 +425,7 @@
   }
 
   function up(e: PointerEvent) {
+    cancelHold();
     const d = drag;
     drag = null;
     if (!d) return;
@@ -410,6 +444,10 @@
 
   function dbl(e: MouseEvent) {
     const { px, py } = local(e);
+    addAt(px, py);
+  }
+
+  function addAt(px: number, py: number) {
     const lane = laneAt(py);
     if (!lane) return;
     const top = lane === "a" ? A_TOP : B_TOP;
@@ -837,7 +875,7 @@
         <button class="btn sm" onclick={() => removePoint(sel.lane, sel.i)}><Icon name="trash" size={14} /> Remove point</button>
       {:else}
         <span class="hint">
-          <b>Double-click</b> the {paramInfo.label.toLowerCase()} line to add a point · drag points to change time and volume · <b>right-click</b> a point to remove it ·
+          <b>Double-click</b> (on a phone: press and hold) the {paramInfo.label.toLowerCase()} line to add a point · drag points to change time and volume · <b>right-click</b> (or press and hold) a point to remove it ·
           click the ruler or a song to move the playhead · <b>Space</b> plays from there · scroll to move, <b>Ctrl+scroll</b> to zoom
         </span>
       {/if}

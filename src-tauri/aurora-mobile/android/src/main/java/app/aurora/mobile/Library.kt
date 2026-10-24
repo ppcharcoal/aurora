@@ -43,6 +43,7 @@ object Library {
     val trackNo: Int,
     val discNo: Int,
     val cover: String?,
+    val durationMs: Double = 0.0,
   )
 
   private class Album(val id: String, val name: String, val artist: String, val tracks: List<Track>)
@@ -55,6 +56,13 @@ object Library {
   private var playlists: List<Playlist> = emptyList()
   private var recent: List<String> = emptyList()
   private var artAuthority = ""
+
+  /** A song by its id (for transitions), if it's in the library. */
+  @Synchronized
+  fun track(context: Context, id: String): Track? {
+    ensure(context)
+    return byId[id]
+  }
 
   /** Forget the cached copy (the app changed the library or playlists). */
   @Synchronized
@@ -91,6 +99,7 @@ object Library {
             trackNo = t.optInt("trackNo", 0),
             discNo = t.optInt("discNo", 0),
             cover = t.optString("cover").takeIf { it.isNotEmpty() && it != "null" },
+            durationMs = t.optDouble("durationMs", 0.0),
           ),
         )
       }

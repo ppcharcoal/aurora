@@ -301,10 +301,10 @@
           "markdownDescription": "Lets Aurora's own pages drive the Android playback service and read audio outputs.\n#### This default permission set includes:\n\n- `allow-player`"
         },
         {
-          "description": "Phone music, picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events.",
+          "description": "Phone music, song analysis for transitions (waveforms, silence), picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events.",
           "type": "string",
           "const": "allow-player",
-          "markdownDescription": "Phone music, picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events."
+          "markdownDescription": "Phone music, song analysis for transitions (waveforms, silence), picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events."
         }
       ]
     }

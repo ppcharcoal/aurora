@@ -1,0 +1,51 @@
+# Compiles the Android app (debug, unsigned, nothing published) to check the
+# Kotlin side before a release. Actions tab → "Android check" → Run workflow.
+name: Android check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # GitHub's Ubuntu machines come with the Android SDK; add the NDK version we build with.
+      - name: Android SDK and NDK
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          yes | "$SDK/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018" > /dev/null
+          echo "NDK_HOME=$SDK/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Last.fm key (optional)
+        env:
+          LASTFM_KEY_JSON: ${{ secrets.LASTFM_KEY_JSON }}
+        run: |
+          if [ -n "$LASTFM_KEY_JSON" ]; then printf '%s' "$LASTFM_KEY_JSON" > src-tauri/lastfm-key.json; fi
+
+      - run: npm ci
+      - name: Create the Android project
+        run: npx tauri android init --ci && node scripts/android-setup.mjs
+
+      - name: Build (debug)
+        run: |
+          npx tauri android build --apk --target aarch64 --debug > /tmp/android.log 2>&1 \
+            || { grep -E "^e: |error:|What went wrong" -A4 /tmp/android.log | head -n 60 | sed 's/^/::error::/'; tail -n 20 /tmp/android.log | sed 's/^/::error::/'; exit 1; }
+          tail -n 5 /tmp/android.log

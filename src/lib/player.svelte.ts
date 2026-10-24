@@ -9,7 +9,10 @@ import type { Track } from "./types";
 import { ui } from "./ui.svelte";
 import { native, type NativePlay, type NativeState } from "./native";
 import { isAndroid } from "./platform";
-import { pairKey, transitions } from "./transitions.svelte";
+import { pairKey, transitions, type Mix } from "./transitions.svelte";
+
+/** Repeat-one plays the same song again: no transition. */
+const repeatSame = (r: Repeat, a: Track, b: Track) => r === "one" || a.key === b.key;
 
 export type Repeat = "off" | "all" | "one";
 
@@ -190,6 +193,7 @@ class Player {
       native.call("control", { action: "jump", value: i }).catch(ui.error);
       return;
     }
+    this.mixedInto = null;
     this.index = i;
     this.position = 0;
     this.duration = track.durationMs;
@@ -272,6 +276,14 @@ class Player {
   }
 
   private planned = "";
+  /** The song after the current one and the transition into it (null mix: one after the other). The Discord bot plays the same. */
+  nextPlan = $state.raw<{ track: Track; mix: Mix | null } | null>(null);
+  /** A transition is playing right now (desktop). */
+  get mixing() {
+    return !isAndroid && this.engine.mixing;
+  }
+  /** Set when the current song started through a transition (its key). */
+  mixedInto = $state<string | null>(null);
 
   /** Tells the engine how to go into the next song (see transitions.svelte.ts). */
   private reschedule() {
@@ -280,15 +292,21 @@ class Player {
     const b = j >= 0 ? this.queue[j] : null;
     if (!a || !b || a.key === b.key) {
       this.planned = "";
-      this.engine.schedule(null, null);
+      this.nextPlan = b && a && repeatSame(this.repeat, a, b) ? null : b ? { track: b, mix: null } : null;
+      if (!isAndroid) this.engine.schedule(null, null);
       return;
     }
     const key = pairKey(a, b) + "#" + transitions.version;
     this.planned = key;
-    this.engine.schedule(b, transitions.planNow(a, b));
+    const now = transitions.planNow(a, b);
+    this.nextPlan = { track: b, mix: now };
+    if (!isAndroid) this.engine.schedule(b, now);
     // Smooth: refine once the songs' silent ends are known.
     transitions.plan(a, b).then((mix) => {
-      if (this.planned === key && !this.engine.mixing) this.engine.schedule(b, mix);
+      if (this.planned !== key) return;
+      if (!isAndroid && this.engine.mixing) return;
+      this.nextPlan = { track: b, mix };
+      if (!isAndroid) this.engine.schedule(b, mix);
     });
   }
 
@@ -297,6 +315,7 @@ class Player {
     const i = this.nextIndex();
     const track = this.queue[i];
     if (!track) return;
+    this.mixedInto = track.key;
     this.index = i;
     this.position = this.engine.position();
     this.duration = track.durationMs;

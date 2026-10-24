@@ -46,56 +46,269 @@ class PlaybackService : MediaLibraryService() {
     var current: PlaybackService? = null
       private set
 
-    /** "Smooth" transitions: fade length in ms (0 = None). Set by the app, remembered for Android Auto. */
-    @Volatile
-    var fadeMs = 0L
-      private set
-
+    /** The app changed transitions (or the default): plan the next one again. */
     fun setTransition(context: android.content.Context, ms: Long) {
-      fadeMs = ms.coerceIn(0L, 12_000L)
-      context.getSharedPreferences("aurora", android.content.Context.MODE_PRIVATE).edit().putLong("fadeMs", fadeMs).apply()
-      current?.applyFade()
+      Transitions.changed()
+      current?.let { svc -> svc.handler.post { svc.replanSafe() } }
     }
   }
 
-  /* ---- Smooth transitions: the end of a song fades out, the next fades in. ----
-     The music files are untouched; only the player's volume moves. */
+  /* ------------------------------------------------------------------------
+   * Transitions (see Mix.kt), like the desktop app: near the end of song A,
+   * a second player plays song B over it, each with its own volume and
+   * effect lines (FxProcessor). When A has stopped, the main player jumps
+   * to B at the same spot and takes over, with a short crossfade, so the
+   * notification, lock screen and Android Auto always show the main player.
+   * Any surprise (a seek, a skip, an error) just cancels the transition.
+   * The music files are only read, never changed.
+   * --------------------------------------------------------------------- */
 
-  /** The volume chosen in the app (0–1); fades work on top of it. */
+  /** The volume chosen in the app (0–1); transitions work on top of it. */
   var userVolume = 1f
     set(v) {
       field = v.coerceIn(0f, 1f)
-      applyFade()
+      if (::player.isInitialized) player.volume = field
+      side?.volume = field
     }
-  private var fadingIn = false
-  private val fader = android.os.Handler(android.os.Looper.getMainLooper())
-  private val fadeTick = object : Runnable {
+
+  val handler = android.os.Handler(android.os.Looper.getMainLooper())
+  private val fxMain = FxProcessor()
+  private val fxSide = FxProcessor()
+  private var side: ExoPlayer? = null
+  private var sideFor: String? = null
+
+  private class Plan(val bIndex: Int, val bId: String, val mix: Mix)
+  private enum class Phase { IDLE, READY, OVERLAP, HANDOVER, TAIL }
+
+  private var plan: Plan? = null
+  private var planKey = ""
+  private var phase = Phase.IDLE
+  /** After the take-over: the rest of B's lines. */
+  private var tail: Mix? = null
+  /** Our own jumps don't count as "the user moved". */
+  private var ownSeekUntil = 0L
+  private var handoverAt = 0L
+  private var mainBackAt = 0L
+  private var ticking = false
+  private val tick = object : Runnable {
     override fun run() {
-      applyFade()
-      if (player.isPlaying && fadeMs > 0) fader.postDelayed(this, 80)
+      try {
+        step()
+      } catch (e: Exception) {
+        cancelMix()
+      }
+      if (needTick()) handler.postDelayed(this, 40) else ticking = false
     }
   }
 
-  fun applyFade() {
-    if (!::player.isInitialized) return
-    val ms = fadeMs
-    if (ms <= 0 || player.repeatMode == Player.REPEAT_MODE_ONE) {
-      fadingIn = false
-      player.volume = userVolume
-      return
+  private fun needTick() = phase == Phase.HANDOVER || (player.playWhenReady && (plan != null || phase != Phase.IDLE || tail != null))
+
+  private fun kick() {
+    if (!ticking && needTick()) {
+      ticking = true
+      handler.post(tick)
     }
-    val pos = player.currentPosition
-    val dur = player.duration
-    var f = 1f
-    if (dur != C.TIME_UNSET && dur > ms * 2 && player.hasNextMediaItem()) {
-      f = minOf(f, ((dur - pos).toFloat() / ms).coerceIn(0f, 1f))
+  }
+
+  private fun now() = android.os.SystemClock.elapsedRealtime()
+
+  private fun pathOf(item: MediaItem): String? =
+    item.localConfiguration?.uri?.path ?: Library.track(this, Library.trackId(item.mediaId))?.path
+
+  fun replanSafe() {
+    try {
+      replan()
+    } catch (e: Exception) {
+      plan = null
     }
-    val inMs = ms / 2
-    if (fadingIn) {
-      if (pos >= inMs) fadingIn = false else f = minOf(f, (pos.toFloat() / inMs).coerceIn(0f, 1f))
+    kick()
+  }
+
+  /** Works out the transition from the current song into the next one. */
+  private fun replan() {
+    if (phase == Phase.OVERLAP || phase == Phase.HANDOVER) return
+    val idx = player.currentMediaItemIndex
+    val next = player.nextMediaItemIndex
+    if (player.repeatMode == Player.REPEAT_MODE_ONE || idx == C.INDEX_UNSET || next == C.INDEX_UNSET) return setPlan(null)
+    val a = player.getMediaItemAt(idx)
+    val b = player.getMediaItemAt(next)
+    val aId = Library.trackId(a.mediaId)
+    val bId = Library.trackId(b.mediaId)
+    if (aId == bId) return setPlan(null)
+    val aPath = pathOf(a) ?: return setPlan(null)
+    val bPath = pathOf(b) ?: return setPlan(null)
+    val aDur = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }?.toDouble() ?: (Library.track(this, aId)?.durationMs ?: 0.0)
+    val bDur = Library.track(this, bId)?.durationMs ?: 0.0
+    if (aDur <= 0 || bDur <= 0) return setPlan(null)
+    val key = "$aId>$bId#$next#${Transitions.version}#${aDur.toLong()}"
+    if (key == planKey) return
+    planKey = key
+    val mix = Transitions.plan(this, aId, aPath, aDur, bId, bPath, bDur) {
+      handler.post {
+        planKey = ""
+        replanSafe()
+      }
     }
-    // Equal-power curve: sounds even, no dip in the middle.
-    player.volume = userVolume * kotlin.math.sin(f * Math.PI.toFloat() / 2f)
+    setPlan(mix?.let { Plan(next, bId, it) })
+  }
+
+  private fun setPlan(p: Plan?) {
+    if (phase == Phase.READY && sideFor != p?.bId) stopSide()
+    if (p == null) planKey = ""
+    plan = p
+    if (phase == Phase.READY && p == null) phase = Phase.IDLE
+    if (p == null && tail == null) {
+      fxMain.gain = 1f
+      fxMain.fx = Fx.NONE
+    }
+    kick()
+  }
+
+  private fun ensureSide(): ExoPlayer {
+    side?.let { return it }
+    val renderers = object : DefaultRenderersFactory(this) {
+      override fun buildAudioSink(context: android.content.Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+        DefaultAudioSink.Builder(context)
+          .setEnableFloatOutput(enableFloatOutput)
+          .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+          .setAudioProcessors(arrayOf(fxSide))
+          .build()
+    }
+    val s = ExoPlayer.Builder(this, renderers)
+      .setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), false)
+      .build()
+    s.volume = userVolume
+    Outputs.apply(this, s)
+    side = s
+    return s
+  }
+
+  private fun stopSide() {
+    side?.let {
+      it.stop()
+      it.clearMediaItems()
+    }
+    sideFor = null
+  }
+
+  /** Something unexpected happened: no transition this time, the music just carries on. */
+  private fun cancelMix() {
+    try {
+      stopSide()
+    } catch (e: Exception) {
+    }
+    phase = Phase.IDLE
+    tail = null
+    fxMain.gain = 1f
+    fxMain.fx = Fx.NONE
+    planKey = ""
+    handler.post { replanSafe() }
+  }
+
+  private fun prepareSide(p: Plan, atMs: Double) {
+    val s = ensureSide()
+    if (sideFor != p.bId) {
+      s.setMediaItem(player.getMediaItemAt(p.bIndex))
+      s.prepare()
+      sideFor = p.bId
+    }
+    s.seekTo(atMs.toLong().coerceAtLeast(0))
+  }
+
+  private fun step() {
+    val p = plan
+    val t = player.currentPosition.toDouble()
+    when (phase) {
+      Phase.IDLE, Phase.READY, Phase.TAIL -> {
+        var g = 1.0
+        var fx = Fx.NONE
+        tail?.let { m ->
+          val bT = m.bStart + (t - m.bOffset)
+          if (bT >= m.end()) {
+            tail = null
+            if (phase == Phase.TAIL) phase = Phase.IDLE
+          } else {
+            g = m.gainB(bT)
+            fx = m.fxB(bT)
+          }
+        }
+        if (p != null && player.currentMediaItemIndex != C.INDEX_UNSET) {
+          g *= p.mix.gainA(t)
+          if (p.mix.aFx.isNotEmpty()) fx = p.mix.fxA(t)
+          if (phase != Phase.READY && t >= p.mix.bStart - 5000) {
+            prepareSide(p, p.mix.bOffset)
+            fxSide.gain = 0f
+            tail = null
+            phase = Phase.READY
+          }
+          if (t >= p.mix.bStart && player.isPlaying) {
+            val late = t - p.mix.bStart
+            prepareSide(p, p.mix.bOffset + late)
+            fxSide.gain = p.mix.gainB(t).toFloat()
+            fxSide.fx = p.mix.fxB(t)
+            side?.play()
+            phase = Phase.OVERLAP
+          }
+        }
+        fxMain.gain = g.toFloat()
+        fxMain.fx = fx
+      }
+      Phase.OVERLAP -> {
+        val m = p?.mix ?: return cancelMix()
+        val s = side ?: return cancelMix()
+        if (!player.playWhenReady) {
+          if (s.playWhenReady) s.pause()
+          return
+        }
+        if (!s.playWhenReady) s.play()
+        val bT = m.bStart + (s.currentPosition - m.bOffset)
+        fxMain.gain = m.gainA(t).toFloat()
+        fxMain.fx = if (m.aFx.isNotEmpty()) m.fxA(t) else Fx.NONE
+        fxSide.gain = m.gainB(bT).toFloat()
+        fxSide.fx = m.fxB(bT)
+        val aDur = player.duration
+        val aDone = t >= m.aEnd || player.playbackState == Player.STATE_ENDED || (aDur != C.TIME_UNSET && aDur - t < 80)
+        if (aDone) beginHandover(p, s)
+      }
+      Phase.HANDOVER -> {
+        val m = p?.mix ?: return cancelMix()
+        val s = side ?: return cancelMix()
+        val bT = m.bStart + (s.currentPosition - m.bOffset)
+        fxSide.gain = m.gainB(bT).toFloat()
+        fxSide.fx = m.fxB(bT)
+        if (player.currentMediaItemIndex == p.bIndex && player.isPlaying) {
+          if (mainBackAt == 0L) mainBackAt = now()
+          // A short crossfade from the second player to the main one (same song, same spot).
+          val k = ((now() - mainBackAt) / 150.0).coerceIn(0.0, 1.0)
+          val mainT = m.bStart + (player.currentPosition - m.bOffset)
+          fxMain.gain = (m.gainB(mainT) * k).toFloat()
+          fxMain.fx = m.fxB(mainT)
+          fxSide.gain = (m.gainB(bT) * (1 - k)).toFloat()
+          if (k >= 1) {
+            stopSide()
+            tail = m
+            plan = null
+            planKey = ""
+            phase = Phase.TAIL
+            replanSafe()
+          }
+        } else if (now() - handoverAt > 5000) {
+          // The main player didn't get there: let it play on its own.
+          cancelMix()
+        }
+      }
+    }
+  }
+
+  /** A has stopped: the main player jumps to B where the second player is, then takes over. */
+  private fun beginHandover(p: Plan, s: ExoPlayer) {
+    phase = Phase.HANDOVER
+    handoverAt = now()
+    mainBackAt = 0L
+    fxMain.gain = 0f
+    ownSeekUntil = now() + 3000
+    player.seekTo(p.bIndex, (s.currentPosition + 250).coerceAtLeast(0))
+    if (!player.playWhenReady) player.play()
   }
 
   override fun onCreate() {
@@ -106,7 +319,7 @@ class PlaybackService : MediaLibraryService() {
         DefaultAudioSink.Builder(context)
           .setEnableFloatOutput(enableFloatOutput)
           .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
-          .setAudioProcessors(arrayOf(TeeAudioProcessor(Spectrum)))
+          .setAudioProcessors(arrayOf(fxMain, TeeAudioProcessor(Spectrum)))
           .build()
     }
     player = ExoPlayer.Builder(this, renderers)
@@ -117,24 +330,45 @@ class PlaybackService : MediaLibraryService() {
       .setHandleAudioBecomingNoisy(true) // pause when headphones are unplugged
       .setWakeMode(C.WAKE_MODE_LOCAL)
       .build()
-    fadeMs = getSharedPreferences("aurora", MODE_PRIVATE).getLong("fadeMs", 0L)
     Outputs.apply(this, player)
     PlayLog.attach(this, player)
     player.addListener(object : Player.Listener {
       private var errors = 0
 
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-        // Only songs that follow on by themselves fade in (not a tap on another song).
-        fadingIn = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && fadeMs > 0
-        applyFade()
+        val ours = now() < ownSeekUntil
+        when {
+          ours -> {}
+          // A ran out on its own during the transition: take over now.
+          phase == Phase.OVERLAP && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && player.currentMediaItemIndex == plan?.bIndex ->
+            side?.let { s -> plan?.let { beginHandover(it, s) } }
+          phase != Phase.IDLE -> cancelMix()
+          else -> tail = null
+        }
+        if (!ours) replanSafe()
         saveQueue()
       }
-      override fun onTimelineChanged(timeline: Timeline, reason: Int) = saveQueue()
+
+      override fun onTimelineChanged(timeline: Timeline, reason: Int) {
+        replanSafe()
+        saveQueue()
+      }
+
+      override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+        // The user moved in the song during a transition: forget it.
+        if (reason == Player.DISCONTINUITY_REASON_SEEK && now() >= ownSeekUntil && phase != Phase.IDLE) cancelMix()
+      }
+
+      override fun onPlaybackStateChanged(playbackState: Int) {
+        if (playbackState == Player.STATE_READY) replanSafe()
+      }
+
+      override fun onRepeatModeChanged(repeatMode: Int) = replanSafe()
+      override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) = replanSafe()
 
       override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (isPlaying) errors = 0
-        fader.removeCallbacks(fadeTick)
-        if (isPlaying && fadeMs > 0) fader.post(fadeTick)
+        kick()
       }
 
       // A missing or broken file: skip it (a few times at most), like the desktop app.
@@ -181,6 +415,9 @@ class PlaybackService : MediaLibraryService() {
     current = null
     session?.release()
     session = null
+    handler.removeCallbacksAndMessages(null)
+    side?.release()
+    side = null
     player.release()
     super.onDestroy()
   }

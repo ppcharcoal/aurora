@@ -23,7 +23,7 @@ Lets Aurora's own pages drive the Android playback service and read audio output
 </td>
 <td>
 
-Phone music, picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events.
+Phone music, song analysis for transitions (waveforms, silence), picking images and backup files, playback queue and transport, audio output, plays made while the app was closed, and their events.
 
 </td>
 </tr>

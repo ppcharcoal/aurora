@@ -258,7 +258,7 @@
     <div class="seg two">
       <button class:on={transitions.value.mode === "none"} onclick={() => transitions.setMode("none")}>None<small>Each song plays to its end, then the next starts</small></button>
       <button class:on={transitions.value.mode === "smooth"} onclick={() => transitions.setMode("smooth")}>
-        Smooth<small>{isAndroid ? "Songs fade out and the next fades in" : "Skips silence and blends one song into the next"}</small>
+        Smooth<small>Skips silence and blends one song into the next</small>
       </button>
     </div>
     {#if transitions.value.mode === "smooth"}
@@ -267,7 +267,7 @@
     {/if}
     <p class="note">
       {#if isAndroid}
-        Custom transitions are made in Aurora on a PC. Your music files are never changed.
+        For your own mixes, open a playlist or album and tap <b>Transitions</b>: choose per song, or make a custom one in the editor (transitions made on a PC come along in backups). Your music files are never changed.
       {:else}
         For your own mixes, open a playlist or album and click <b>Transitions</b>: choose per song, or make a custom one in the editor. Transitions never change your music files.
       {/if}
